@@ -14,7 +14,8 @@ def skipped_record(item, stage, error):
             refinement_root=item.get("refinement_root") or fingerprint(semantic(item)),
         )
     return {**record, "accepted": False, "entities": [], "model_output_invalid": True,
-            "stage": stage, "reject_reason": "model_output_invalid_after_retries",
+            "stage": stage, "reject_reason": getattr(
+                error, "reject_reason", "model_output_invalid_after_retries"),
             "error_type": type(error).__name__, "error_message": str(error)}
 
 

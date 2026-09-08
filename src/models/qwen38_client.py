@@ -21,6 +21,11 @@ class QwenValidationError(ValueError):
     """Model output remained invalid after bounded correction attempts."""
 
 
+class QwenContextLengthError(QwenValidationError):
+    """The server explicitly rejected an over-context request; skip without retry."""
+    reject_reason = "context_length_exceeded"
+
+
 class ModelContractError(ValueError):
     """An explicitly checked model answer violates the request contract."""
 
@@ -144,7 +149,34 @@ class Qwen38Client:
             headers=headers,
             timeout=float(self.config.get("request_timeout_seconds", 600)),
         )
-        response.raise_for_status()
+        if response.status_code >= 400:
+            # Inspect only the server error, never the submitted image/prompt payload.
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+            error = body.get("error", body) if isinstance(body, dict) else {}
+            message = str(error.get("message", "")) if isinstance(error, dict) else ""
+            code = error.get("code") if isinstance(error, dict) else None
+            context_overflow = (
+                code == "context_length_exceeded"
+                or bool(re.search(
+                    r"input length .*exceeds .*maximum context length"
+                    r"|(?:prompt|input).*longer than the maximum (?:model|context) length"
+                    r"|maximum context length.*(?:requested|resulted|exceed)",
+                    message, flags=re.IGNORECASE | re.DOTALL,
+                ))
+            )
+            if response.status_code == 400 and context_overflow:
+                raise QwenContextLengthError(message or "context_length_exceeded")
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                detail = message or response.text[:2000]
+                raise requests.HTTPError(
+                    f"{exc}; server_error={detail[:2000]}",
+                    response=response, request=exc.request,
+                ) from exc
         return response.json()["choices"][0]["message"]["content"]
 
     def _load_transformers(self) -> None:
