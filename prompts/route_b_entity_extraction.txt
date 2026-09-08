@@ -2,11 +2,15 @@ Propose visual targets for fine-grained referring expressions using the supplied
 image AND English dense caption. The image is the source of truth. The caption is only
 context, not an exhaustive object list or an eligibility gate. Actively inspect the image
 for useful objects the caption omitted. Never invent an unseen target.
+Propose caption-mentioned objects that you can confirm in the image first, then add
+other visible objects. If capacity is limited, caption-supported targets take priority;
+within each group, rank by clarity and distinctive visible evidence.
 
-Return zero to the supplied proposal_cap targets (currently at most 30), ranked by clarity
-and distinctive visible evidence. There is no minimum: return {"entities":[]} if none
-qualifies. Do not fill the quota. Each must be a complete, clear, independently
-referable object with a likely bbox area <=10% of the image and shortest side >=32px.
+Return up to the supplied proposal_cap targets (currently at most 30). Propose clear,
+independently referable whole objects that could be suitable small targets. Do not
+estimate exact pixel dimensions or enforce numeric area limits at this stage. If size
+is uncertain or near a boundary, propose the object for downstream detection and size
+validation. Return {"entities":[]} only when you cannot identify any suitable candidate.
 Prefer people, animals, small vehicles, bags, containers, signs, number plates, tools,
 small furniture, and other bounded objects with color/pattern/text/action/relations.
 An independently visible hat, backpack, glove, shoe, badge, or handheld tool is allowed;

@@ -1,5 +1,38 @@
 # Visual target discovery
 
+## Caption-first proposal policy
+
+Entity extraction starts from the original visual-proposal prompt with a short
+caption-first instruction: prioritize caption-mentioned objects confirmed in the image,
+then use remaining capacity for visual-only targets. Within each group the model ranks
+by clarity and distinctive evidence. Proposal generation does not estimate exact pixel
+dimensions or enforce numeric area limits; uncertain sizes are passed to downstream
+detection. Final size, whole-object, grounding and expression acceptance rules are unchanged.
+The output remains one entities list, without a caption inventory or per-mention decisions.
+
+A nonempty response uses one proposal request. An empty response with a positive cap
+gets one focused recheck using the same image and caption. The second response may
+also be empty; there is no retry loop to force candidates. Existing answer-validation
+retries still apply separately to each request. Invalid answers remain failures, not
+genuine empty results. A completed empty checkpoint includes this recheck and is reused
+on resume.
+
+The proposal stage writes entities.coverage.json alongside entities.jsonl and prints
+image coverage, empty/invalid counts, proposal-count distribution in the report, and
+completed/recovered rechecks. Empty-rate warnings fire when all valid results are empty,
+or when at least ten valid results are at least 50% empty. This is diagnostic only;
+it does not stop the run, relax acceptance or force nonempty answers.
+
+Postprocessing validates caption spans, deduplicates exact proposals, puts supported
+proposals first while preserving within-group order, and then applies the cap.
+This prioritizes returned proposals; it cannot guarantee the model discovered every
+eligible caption target. A supported span is provenance, not visual verification.
+The changed prompt invalidates old entity checkpoints on the next stage execution;
+the existing checkpoint mechanism archives old records and evaluates downstream
+semantic inputs normally. No GPU coverage improvement has yet been measured.
+
+## Earlier discovery implementation
+
 Audit before this change: the worktree was clean at `0094a44`; no interrupted visual
 proposal implementation was present. Existing capabilities were category query sharing,
 multi-grounder consensus, bbox QA, OCR, expression writing/re-grounding/verification,

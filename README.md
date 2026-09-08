@@ -7,7 +7,7 @@ have been removed.
 
 ```text
 image + caption
-  -> Qwen visual proposals (image + caption reference, 0–30 targets)
+  -> Qwen proposals (caption coverage first, then visual fill, 0–30 targets)
   -> Rex + SAM3.1 + GroundingDINO entity grounding
   -> multi-grounder consensus bbox candidates
   -> unique proposal alignment + bounded extra category-consensus promotion
@@ -35,7 +35,7 @@ source may produce 0–30 accepted regions, each exported as a separate review i
 | Stage | Input and operation | Output |
 | --- | --- | --- |
 | Selection | Sort manifest image IDs, shuffle with seed 42, select the requested slice | `outputs/route_b/selected_manifest.jsonl` |
-| `entities` | Original image + English caption reference; Qwen proposes 0–30 whole-object entities with attributes, category query and locator query | `outputs/route_b/entities.jsonl` |
+| `entities` | Original image + caption; propose caption targets first, then visual-only objects (0–30 total); leave uncertain sizes to detection and recheck an empty response once | `outputs/route_b/entities.jsonl` |
 | `ground` | Image + category queries to retrieve same-class objects; image + locator queries to retrieve the proposed target; run Rex, SAM3.1 and GroundingDINO | `outputs/grounder_outputs/route_b_entity_raw.jsonl` |
 | `aggregate` | Deduplicate detections, build multi-model consensus and apply bbox size rules; retain peer information for comparison | `outputs/route_b/grounded_entities.jsonl` and grounding rejections |
 | `align` | Qwen sees the original image, numbered candidate overlay and crop montage, with proposal/candidate cards; select one eligible matching instance or reject | `outputs/route_b/entity_alignments.jsonl` |
@@ -51,6 +51,11 @@ Qwen instructions live in `prompts/route_b_*.txt`; the caller adds JSON task car
 runtime. Inspect `src/routes/route_b_stages.py` for those cards and
 `src/routes/route_b_discovery.py` for promotion. The main stage dispatcher is
 `src/routes/route_b_caption.py`; managed execution is in `scripts/run_pipeline.sh`.
+
+Proposal coverage is recorded in `outputs/route_b/entities.coverage.json`: image counts,
+empty and invalid results, proposal-count distribution, and completed/recovered empty
+rechecks. A high empty-answer rate produces a warning even when answers are valid JSON.
+This does not change acceptance criteria. See `docs/ROUTE_B_DISCOVERY.md` for the policy.
 
 ## Data
 

@@ -7,7 +7,10 @@ row order. The default is 100 images without replacement with sample_seed=42. Ev
 uses this same selection; the manifest and seed must remain fixed during resume.
 
 1. `entities`: Qwen receives the source image and English caption reference and emits 0-30
-   visually discovered whole-object proposals, including caption-omitted objects. Each includes a broad
+   whole-object proposals: caption-mentioned objects confirmed in the image first, then
+   additional visual targets using remaining capacity. Uncertain sizes are left for
+   downstream detection; numeric size limits remain enforced in aggregation. An empty
+   response gets one focused recheck, which may still return empty. Each proposal includes a broad
    `category_query` and a discriminative `locator_query`.
 2. `ground`: each distinct category query and each non-identical locator query is sent to
    Rex, SAM3.1, and GroundingDINO.

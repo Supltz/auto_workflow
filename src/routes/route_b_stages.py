@@ -26,6 +26,8 @@ from src.regions.target_scope import (
     validate_evidence,
 )
 from src.routes.model_failures import report_model_failures, skipped_record
+from src.routes.proposal_coverage import report_proposal_coverage
+from src.routes.proposal_priority import prioritize_proposals
 from src.routes.route_b_checkpoint import checkpointed, fingerprint, semantic, stamp
 from src.schema import (
     EntityAlignmentDecision,
@@ -156,50 +158,64 @@ def extract_caption_entities(
     resume: bool,
     overwrite: bool,
 ) -> None:
-    """Discover visual targets from the full image with caption as optional context."""
+    """Propose caption-first targets, with one focused recheck for an empty answer."""
     prepare_output(output_path, overwrite, resume)
     existing = list(read_jsonl(output_path)) if resume and output_path.exists() else []
-    # An empty proposal list is a completed result; do not retry to fill a quota.
+    # A completed empty result already includes its one recheck; resume reuses it.
     done = {item["image_id"] for item in existing if "entities" in item}
     pending = [item for item in manifest_rows if item["image_id"] not in done]
     prompt = prompt_path.read_text(encoding="utf-8")
     client = Qwen38Client({**qwen_config, "max_output_tokens":
                           int(config.get("entity_max_output_tokens", 12288))})
-    provenance = model_metadata(qwen_config, {**config, "model": qwen_config}, "route_b_entity_v1")
+    provenance = model_metadata(qwen_config, {**config, "model": qwen_config},
+                                "route_b_entity_caption_first_recall_v3")
 
     def worker(record: dict[str, Any]) -> dict[str, Any]:
         started = time.perf_counter()
         image = open_rgb(record["image_path"])
         qwen_image = _qwen_copy(image)
         image.close()
+        proposal_cap = int(config.get("max_entities_per_image", 30))
+        card = {
+            "caption_reference": record["caption"],
+            "proposal_cap": proposal_cap,
+            "proposal_policy": "caption_first_then_visual_fill",
+            "width": record["width"], "height": record["height"],
+        }
+        empty_recheck = False
+        initial_raw = None
         try:
             result, raw = client.generate_json(
                 prompt,
                 [qwen_image],
                 VisualEntitySet,
-                extra_text=json.dumps({"caption_reference": record["caption"],
-                                       "proposal_cap": config.get("max_entities_per_image", 30),
-                                       "width": record["width"], "height": record["height"]}),
+                extra_text=json.dumps(card),
             )
+            if not result.entities and proposal_cap > 0:
+                empty_recheck = True
+                initial_raw = raw
+                result, raw = client.generate_json(
+                    prompt + (
+                        "\n\nThe first pass found no candidates. Reinspect the original image "
+                        "for overlooked caption-mentioned objects, then other visible objects. "
+                        "Consider independently referable accessories, containers, signs and tools. "
+                        "Leave uncertain size to downstream detection. Keep the same visual "
+                        "evidence and whole-object requirements; do not invent targets. "
+                        "Return the same entities schema; an empty list is still valid."
+                    ),
+                    [qwen_image],
+                    VisualEntitySet,
+                    extra_text=json.dumps({**card, "empty_result_recheck": True}),
+                )
         finally:
             qwen_image.close()
-        entities = result.model_dump(mode="json")["entities"]
-        entities = entities[: int(config.get("max_entities_per_image", 30))]
+        entities = prioritize_proposals(
+            result.model_dump(mode="json")["entities"],
+            caption=record["caption"],
+            image_id=record["image_id"],
+            proposal_cap=int(config.get("max_entities_per_image", 30)),
+        )
         caption_span_adjustments = []
-        for rank, entity in enumerate(entities, 1):
-            entity["rank"] = rank
-            entity["source"] = "visual_proposal"
-            span = entity["caption_span"]
-            entity["caption_supported"] = bool(
-                entity["caption_supported"] and span and span in record["caption"])
-            if not entity["caption_supported"]:
-                entity["caption_span"] = ""
-            identity = {k: v for k, v in entity.items() if k not in {"entity_id", "rank"}}
-            entity["entity_id"] = "v_" + fingerprint([record["image_id"], identity])[:20]
-        # Exact duplicate semantic proposals are collapsed before any grounder work.
-        entities = list({e["entity_id"]: e for e in entities}.values())
-        for rank, entity in enumerate(entities, 1):
-            entity["rank"] = rank
         validated = VisualEntitySet.model_validate({"entities": entities})
         return {
             "image_id": record["image_id"],
@@ -209,6 +225,8 @@ def extract_caption_entities(
                 **provenance,
                 "raw_response": raw,
                 "caption_span_adjustments": caption_span_adjustments,
+                "empty_recheck": empty_recheck,
+                "initial_raw_response": initial_raw,
             },
         }
 
@@ -225,6 +243,7 @@ def extract_caption_entities(
     latest = {item["image_id"]: item for item in read_jsonl(output_path)}
     ordered = [latest[item["image_id"]] for item in manifest_rows]
     rewrite_jsonl_atomic(output_path, ordered)
+    report_proposal_coverage(ordered, output_path)
 
 
 @checkpointed("entity_rows")
