@@ -1,0 +1,46 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.env
+.env.*
+
+# Codex/session metadata and scheduler logs are local runtime state.
+.agents/
+.codex/
+route_b_logs/
+*.log
+*.out
+
+# Only the two source annotation exports needed to reconstruct Route B are versioned.
+/sa_*.jsonl
+!/sa_000074.jsonl
+!/sa_000523.jsonl
+
+# These are shared-storage mappings, not repository payloads.
+/models
+/third_party
+/outputs
+
+# Keep Route B's small, reproducible manifest metadata; exclude downloaded images.
+data/*
+!data/manifest.jsonl
+!data/sample_ids.txt
+!data/download_summary.json
+!data/download_failures.jsonl
+data/images/
+
+# Runtime provenance is append-only and machine-specific.
+artifacts/run_provenance.jsonl
+
+# Machine configuration and generated reference reports.
+/.local
+/run_logs/
+/artifacts/*.json
+/data/download_summary.json
+/data/download_failures.jsonl
+/data/downloads/
+/envs/*
+!/envs/README.md

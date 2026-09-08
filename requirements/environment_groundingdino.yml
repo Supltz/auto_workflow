@@ -1,0 +1,23 @@
+name: groundingdino
+channels: [conda-forge, nvidia]
+dependencies:
+  - python=3.11
+  - pip
+  - cuda-nvcc=12.8
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.7.1+cu128
+      - torchvision==0.22.1+cu128
+      - transformers==4.51.3
+      - addict
+      - yapf
+      - timm
+      - opencv-python-headless
+      - numpy>=1.26
+      - pillow>=10.2
+      - pydantic>=2.6
+      - pyyaml>=6.0
+      - supervision>=0.22.0
+      - pycocotools
+      - ninja
+      # scripts/setup_envs.sh performs the editable CUDA build with CUDA_HOME.

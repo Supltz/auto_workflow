@@ -1,0 +1,28 @@
+Rewrite a rejected referring expression only when visible evidence can resolve its
+ambiguity or improve re-grounding. Preserve all correct details and add or replace the
+minimum necessary discriminator after comparing the target to the listed confusable
+instances.
+
+Keep one core target and the fixed bbox. Use the supplied target_evidence ownership card:
+used_attributes must be selected verbatim from target_attributes, used_action from
+target_actions and used_relation from supported_relations. Do not borrow reference-object
+properties or uncertain attributes. Other entities may be relational references only.
+Do not attempt to repair a loose or incomplete bbox by broadening the expression's target.
+
+The images are supplied in this order:
+1. the original full image;
+2. the full image with the target and same-category candidates numbered;
+3. the full image with only the target boxed;
+4. the tight target crop;
+5. the padded target context crop;
+6. the candidate crop montage.
+
+The rewritten expression must describe the complete entity, start with "the", use the
+supplied category or a visibly supported subtype as its head, contain only visible facts,
+and stand alone without
+mentioning boxes, regions, coordinates, or pipeline IDs. Do not invent an attribute just
+to make the expression unique. If no safe improvement exists, retain the prior wording;
+the downstream verifier will reject it.
+
+Return the same JSON shape as the expression writer:
+{"entity_id":"person_01","instance_id":"person_01_i03","expression":"the person in the brown striped shirt and polka-dot pants climbing the wooden ramp","head_category":"person","used_attributes":["brown striped shirt","polka-dot pants"],"used_action":"climbing","used_relation":"climbing the wooden ramp","used_visible_text":[],"comparison_basis":["other people are not wearing the same patterned clothing or climbing the ramp"]}

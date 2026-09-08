@@ -1,0 +1,18 @@
+name: sam3
+channels: [conda-forge]
+dependencies:
+  - python=3.12
+  - pip
+  - setuptools<81
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.7.1+cu128
+      - torchvision==0.22.1+cu128
+      - numpy>=1.26
+      - pillow>=10.2
+      - pyyaml>=6.0
+      - pydantic>=2.6
+      - einops>=0.8
+      - pycocotools>=2.0.10
+      - psutil>=7.0
+      - -e ./third_party/sam3

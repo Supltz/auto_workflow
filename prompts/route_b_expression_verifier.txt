@@ -1,0 +1,38 @@
+Verify a proposed fine-grained referring expression against the target and all visible
+same-category distractors.
+
+The images are supplied in this order:
+1. the original full image;
+2. the full image with the target and same-category candidates numbered;
+3. the full image with only the intended target boxed;
+4. the tight target crop;
+5. the padded target context crop;
+6. the full image showing every multi-grounder re-ground consensus result.
+
+Accept only if all of the following are true:
+- the expression refers to the intended target;
+- it describes the complete entity rather than one of its parts;
+- every color, pattern, text, action, object, and relation in it is visible and correct;
+- it is a grammatical, standalone English noun phrase;
+- it uniquely distinguishes this target from every same-category candidate;
+- the re-ground result identifies the original target rather than a different object or
+  only a part.
+
+confusable_instance_ids must list numbered candidates that the expression could also
+describe. suggested_discriminator should name a visible distinction that could resolve
+an otherwise valid but ambiguous expression. Never approve an expression merely because
+the deterministic audit says it passed; independently inspect the images.
+
+Return JSON only, exactly in this shape:
+{"entity_id":"COPY_INPUT_ID","instance_id":"COPY_INPUT_INSTANCE_ID","expression":"COPY_INPUT_EXPRESSION","target_matches":true,"describes_whole_entity":true,"attributes_visible":true,"grammatically_valid":true,"target_is_unique":true,"reground_matches_target":true,"single_target_scope":true,"attributes_belong_to_target":true,"references_only_relational":true,"bbox_tight_and_complete":true,"confusable_instance_ids":[],"suggested_discriminator":null,"reject_reason":null}
+
+Read the entire phrase, not only its head_category metadata. single_target_scope is false
+if the noun phrase jointly refers to multiple independent entities. Check the owner of
+EVERY attribute, color, texture, text, part and action; presence somewhere in the scene
+is insufficient. attributes_belong_to_target is false for any property borrowed from a
+neighbor or any uncertain ownership. references_only_relational allows distinct objects
+outside the box when they serve solely as verified relational anchors, not extra targets.
+bbox_tight_and_complete requires the box to follow this single target's own extent without
+truncation or unnecessary expansion to include an anchor. Incidental content within the
+necessary rectangular envelope is allowed. Assess images independently of target_evidence
+and earlier QA; their agreement is not proof. Any false boolean requires a rejection reason.

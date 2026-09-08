@@ -1,0 +1,80 @@
+route: B_caption
+manifest: data/manifest.jsonl
+sample_size: 100
+sample_seed: 42
+models_config: configs/models.yaml
+
+# Route B discovers visual targets; the English caption is reference, not eligibility.
+entity_prompt: prompts/route_b_entity_extraction.txt
+alignment_prompt: prompts/route_b_entity_alignment.txt
+bbox_verifier_prompt: prompts/route_b_entity_bbox_verifier.txt
+ocr_prompt: prompts/route_b_region_ocr.txt
+expression_prompt: prompts/route_b_expression_writer.txt
+expression_verifier_prompt: prompts/route_b_expression_verifier.txt
+refinement_prompt: prompts/route_b_expression_refiner.txt
+
+entity_output: outputs/route_b/entities.jsonl
+entity_grounding_output: outputs/grounder_outputs/route_b_entity_raw.jsonl
+grounded_entities_output: outputs/route_b/grounded_entities.jsonl
+grounding_rejections_output: outputs/route_b/grounding_rejections.jsonl
+alignment_output: outputs/route_b/entity_alignments.jsonl
+bbox_verification_output: outputs/route_b/bbox_verifications.jsonl
+ocr_output: outputs/route_b/region_ocr.jsonl
+expression_output: outputs/route_b/expression_drafts.jsonl
+expression_grounding_output: outputs/grounder_outputs/route_b_expression_raw.jsonl
+expression_verification_output: outputs/route_b/expression_verifications.jsonl
+refinement_drafts_output: outputs/route_b/refinement_drafts.jsonl
+refinement_grounding_output: outputs/grounder_outputs/route_b_refinement_raw.jsonl
+refinement_verification_output: outputs/route_b/refinement_verifications.jsonl
+verified_output: outputs/verified_regions/route_b.jsonl
+rejected_output: outputs/rejected_regions/route_b.jsonl
+human_review_dir: outputs/human_review/route_b
+
+max_entities_per_image: 30
+entity_max_output_tokens: 12288
+candidate_promotion: true
+promotion_prompt: prompts/route_b_candidate_promotion.txt
+promotion_output: outputs/route_b/candidate_promotions.jsonl
+promotion_workers: 4
+max_promotions_per_image: 16
+# The client preserves decoded image dimensions and uses lossless PNG transport.
+# Qwen's own processor still applies its model-specific pixel/patch constraints.
+entity_workers: 4
+alignment_workers: 4
+bbox_verification_workers: 4
+ocr_workers: 4
+expression_workers: 4
+expression_verification_workers: 4
+ocr_backend: qwen
+
+expression_min_words: 8
+expression_max_words: 30
+min_discriminative_cues: 2
+max_refinement_rounds: 2
+
+grounders: [rex, sam31, groundingdino]
+save_masks: true
+reground_save_masks: false
+grounder_environment:
+  REX_MAX_OUTPUT_TOKENS: 64
+
+aggregation:
+  min_grounder_support: 2
+  iou_threshold: 0.5
+  containment_threshold: 0.8
+  max_area_ratio_between_boxes: 3.0
+  # Expression recovery must preserve target extent; containment alone is insufficient.
+  reground_max_area_ratio: 1.25
+  within_grounder_dedup_iou: 0.95
+  instance_dedup_iou: 0.85
+  min_short_side_px: 32
+  min_area_ratio: 0.00001
+  preferred_min_area_ratio: 0.001
+  preferred_max_area_ratio: 0.10
+  max_area_ratio: 0.10
+  context_padding: 0.20
+
+# Finalization selects up to thirty unique verified targets; zero is valid.
+final_max_per_source_image: 30
+review_max_per_source_image: 30
+final_target_dedup_iou: 0.98

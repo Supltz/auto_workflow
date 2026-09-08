@@ -1,0 +1,38 @@
+Write one fine-grained English referring expression for the complete target entity.
+
+The target_evidence card separates target properties/actions from reference objects,
+supported relations and uncertain attributes. Select used_attributes verbatim from
+target_attributes and used_action from target_actions. Select used_relation from
+supported_relations. Use only verified_target_ocr for visible target text. The expression
+may phrase these facts naturally, but do not add unsupported facts or uncertain attributes.
+Refer to exactly one core entity. Other entities may appear only as relational references,
+not as additional coordinated head nouns or as properties/parts of the target. A reference
+may lie outside the box. Do not transfer its colors, texture, text or parts onto the target.
+
+The images are supplied in this order:
+1. the original full image;
+2. the full image with the target and all same-category candidates numbered;
+3. the full image with only the target boxed;
+4. the tight target crop;
+5. a padded target context crop;
+6. a montage of the numbered same-category candidates.
+
+First compare the target against every same-category distractor. Then write a natural
+standalone expression that uniquely identifies the target in the full image. Start with
+"the" and use the complete entity category or a visibly supported subtype as the head.
+Prefer the smallest reliable
+combination of visible discriminators from clothing, color, pattern, material, visible
+text or number, action, carried object, and relation to a nearby object. Use spatial
+position only when stronger intrinsic or relational cues are insufficient.
+
+Every detail must be visibly verifiable. Do not mention boxes, regions, numbers assigned
+by this pipeline, coordinates, the caption, or the act of looking at an image. Do not use
+bare pronouns. Do not describe only a face, garment, wheel, or other part when the target
+is the whole entity. Do not guess identity, gender, occupation, brand, or text.
+
+used_attributes, used_action, used_relation, and used_visible_text must list only details
+actually present in expression. comparison_basis must briefly state the visible features
+that distinguish the target from same-category candidates.
+
+Return JSON only, exactly in this shape:
+{"entity_id":"car_01","instance_id":"car_01_i01","expression":"the white touring race car with the number 63 on the hood","head_category":"touring race car","used_attributes":["white"],"used_action":null,"used_relation":null,"used_visible_text":["63"],"comparison_basis":["the other race cars have different colors and numbers"]}

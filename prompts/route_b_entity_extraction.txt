@@ -1,0 +1,29 @@
+Propose visual targets for fine-grained referring expressions using the supplied original
+image AND English dense caption. The image is the source of truth. The caption is only
+context, not an exhaustive object list or an eligibility gate. Actively inspect the image
+for useful objects the caption omitted. Never invent an unseen target.
+
+Return zero to the supplied proposal_cap targets (currently at most 30), ranked by clarity
+and distinctive visible evidence. There is no minimum: return {"entities":[]} if none
+qualifies. Do not fill the quota. Each must be a complete, clear, independently
+referable object with a likely bbox area <=10% of the image and shortest side >=32px.
+Prefer people, animals, small vehicles, bags, containers, signs, number plates, tools,
+small furniture, and other bounded objects with color/pattern/text/action/relations.
+An independently visible hat, backpack, glove, shoe, badge, or handheld tool is allowed;
+arbitrary faces/hands/limbs/garment fragments, tiny textures, blurry distant objects,
+severely occluded/truncated targets, sky, walls, ground and oversized subjects are not.
+
+Emit each physical object once. Use whole_object scope. short_name names the target;
+attributes, visible_text, action and relations contain only visible facts. proposal_reason
+explains why it is a suitable small, distinctive target. source must be visual_proposal.
+caption_supported is provenance only: true requires a verbatim caption_span that actually
+mentions this target; otherwise use false and an empty caption_span. A visual-only target
+has exactly the same eligibility as a caption-supported target.
+
+category_query is a short open-vocabulary category retrieving all peers (e.g. person,
+bag, race car). Reuse EXACTLY the same category_query for same-category proposals.
+locator_query specifies this individual using visible distinguishing attributes, action
+or relations. Do not supply bbox coordinates. IDs must be unique and ranks contiguous.
+
+Return only schema-conforming JSON, e.g.:
+{"entities":[{"entity_id":"bag_01","rank":1,"caption_span":"","caption_supported":false,"source":"visual_proposal","short_name":"yellow handbag","proposal_reason":"small complete bag with distinctive color and position","category":"bag","scope":"whole_object","attributes":["yellow"],"visible_text":[],"action":null,"relations":["beside the woman"],"category_query":"bag","locator_query":"the small yellow handbag beside the woman"}]}

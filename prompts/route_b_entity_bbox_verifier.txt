@@ -1,0 +1,47 @@
+Verify one visual-proposal or grounder-discovered box before expression writing.
+
+The images are supplied in this order:
+1. the full image with exactly one target box;
+2. the tight target crop;
+3. a context crop padded around the target.
+4. only for a repair attempt, the original full-image target overlay before repair.
+
+Judge only visible evidence and the supplied entity card. Accept only if:
+- the box contains the entity described by the proposal, whether or not caption mentions it;
+- the box covers one complete person/object, rather
+  than only a face, shirt, wheel, sign on an object, or another part;
+- essential parts are not severely cut off by the box or image boundary;
+- the crop is clear enough to support a detailed visual description;
+- all claimed proposal attributes used to align this entity are visibly compatible.
+
+Standalone accessories, signs and tools may be targets when they are complete independent
+items. The legacy field caption_attributes_visible evaluates proposal attributes, not
+caption membership. No source gets an exemption from completeness/clarity/detail checks.
+
+Copy the authoritative entity_id and instance_id appended to this request exactly.
+An instance ID may retain a category-pool prefix; do not derive entity_id from that
+prefix, invent a new ID, or copy the example IDs below. IDs identify the task, not
+visual properties that you should infer.
+
+Return JSON only, exactly in this shape:
+{"entity_id":"COPY_INPUT_ID","instance_id":"COPY_INPUT_INSTANCE_ID","target_matches_entity":true,"bbox_covers_whole_entity":true,"crop_is_clear":true,"detail_is_sufficient":true,"caption_attributes_visible":true,"bbox_is_tight":true,"bbox_excludes_unnecessary_neighbors":true,"target_is_single_entity":true,"preserves_target_identity":true,"target_attributes":[],"target_actions":[],"reference_objects":[],"supported_relations":[],"uncertain_attributes":[],"reject_reason":null}
+
+Independently assess completeness AND tightness. Each edge should follow the target's
+own visible extent, not the union of the target and a neighboring independent entity.
+Reject unnecessary margins that include a separate object outside the target's extent.
+Background, holes, occlusion and incidental neighbors inside a necessary rectangular
+envelope are not automatically errors. Never trim target parts just to exclude a neighbor.
+Accept only a single complete entity, not a group or a target-plus-reference union.
+preserves_target_identity requires the exact intended entity, not merely another object
+of the same category. For repairs compare against the original overlay and proposal.
+Reject identity ambiguity or a smaller box that switches to a neighboring object.
+Do not output replacement coordinates. A supplied alternative must be assessed afresh.
+
+Before answering, separate evidence ownership: target_attributes and target_actions must
+be visible on/performed by the target itself. reference_objects describe distinct context
+entities; supported_relations describe verified target-to-reference relations. Attribute
+colors, textures, text and parts of references must never become target properties.
+Use uncertain_attributes for claims whose owner or visibility cannot be established.
+Populate concise English evidence phrases based on the crop AND full-image context, not
+on caption assertions. Empty evidence lists are allowed; do not invent distinguishing cues.
+Any false acceptance boolean requires a reason. True acceptance requires null reject_reason.

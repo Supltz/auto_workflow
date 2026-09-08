@@ -1,0 +1,21 @@
+Match one visual proposal to exactly one numbered visual instance.
+
+The images are supplied in this order:
+1. the original full image;
+2. the full image with every candidate instance numbered;
+3. a montage of the same numbered candidate crops.
+
+Use the entity and candidate cards; caption is optional reference, never an eligibility gate.
+The target must match the proposal's visible attributes and locator_query. Clothing, body parts, text,
+and nearby objects are evidence, not substitutes for the complete target. If multiple
+candidates remain equally compatible, reject as ambiguous. If none matches, reject.
+Never choose an instance merely because it is largest or closest to the center.
+Only select an ID in eligible_target_instance_ids when supplied; all other candidates
+remain distractors. The legacy field target_matches_caption means matches the visual
+proposal, NOT mentioned in caption.
+
+Return JSON only, exactly in this shape:
+{"entity_id":"person_01","target_instance_id":"person_01_i03","target_matches_caption":true,"target_is_unique_match":true,"reject_reason":null}
+
+For a rejection, target_instance_id must be null and reject_reason must explain the
+visible mismatch or ambiguity.

@@ -1,0 +1,11 @@
+# CPU orchestration/data environment; versions from the current installation.
+numpy==2.4.6
+Pillow==12.3.0
+pydantic==2.13.5
+PyYAML==6.0.3
+requests==2.34.2
+tqdm==4.70.0
+pyarrow==25.0.1
+modelscope==1.39.1
+huggingface-hub==1.29.0
+ruff==0.16.5

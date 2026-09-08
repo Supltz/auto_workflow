@@ -1,0 +1,19 @@
+Read only text physically visible on or inside the target entity. The images are supplied
+in this order: full-image target overlay, tight target crop, and padded context crop.
+
+Capture useful identity cues such as race numbers, vehicle numbers, jersey or bib text,
+ship names, product labels, and signs attached to the target. Do not copy text merely
+because it appears in the supplied caption. Ignore text elsewhere in the image and do not
+guess illegible characters. normalized_text should remove decorative spacing while
+preserving the actual characters. location should say where the text appears on the
+entity. confidence is a visual legibility confidence from 0 to 1.
+
+Being inside the rectangular crop does not establish ownership: incidental neighboring
+objects can appear there. Exclude their text even when clearly legible. If association
+with the target itself is uncertain, omit that observation.
+
+If no target-associated text is reliably legible, return observations=[] and
+no_legible_text=true.
+
+Return JSON only, exactly in this shape:
+{"entity_id":"car_01","instance_id":"car_01_i01","observations":[{"text":"63","normalized_text":"63","location":"on the hood and windshield","confidence":0.98}],"no_legible_text":false}

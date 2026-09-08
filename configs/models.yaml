@@ -1,0 +1,44 @@
+qwen:
+  name: Qwen/Qwen3.8-27B
+  revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+  local_path: models/qwen38_27b
+  backend: vllm
+  api_base: http://127.0.0.1:8000/v1
+  api_key: local
+  dtype: bfloat16
+  gpu_memory_utilization: 0.90
+  max_model_len: 32768
+  max_output_tokens: 2048
+  temperature: 0.0
+  max_attempts: 3
+  request_timeout_seconds: 600
+  env_python: envs/qwen/bin/python
+rex:
+  name: IDEA-Research/Rex-Omni
+  revision: 0e5693d24657f6c0e091008dd6809bb1bd28988c
+  local_path: models/rex_omni
+  repo_path: third_party/Rex-Omni
+  dtype: bfloat16
+  attn_implementation: sdpa
+  max_output_tokens: 256
+  env_python: envs/rex/bin/python
+sam31:
+  name: facebook/sam3.1
+  revision: daa63191845a41281374e725f4c9e51c7a824460
+  local_path: models/sam3_1/sam3.1_multiplex.pt
+  repo_path: third_party/sam3
+  version: sam3.1
+  dtype: bfloat16
+  score_threshold: 0.5
+  use_flash_attention_3: false
+  use_rope_real: false
+  env_python: envs/sam3/bin/python
+groundingdino:
+  name: GroundingDINO-SwinB
+  local_path: models/grounding_dino/groundingdino_swinb_cogcoor.pth
+  repo_path: third_party/GroundingDINO
+  model_config: groundingdino/config/GroundingDINO_SwinB_cfg.py
+  box_threshold: 0.25
+  text_threshold: 0.20
+  dtype: float32
+  env_python: envs/groundingdino/bin/python

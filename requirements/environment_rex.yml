@@ -1,0 +1,18 @@
+name: rex
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.7.1+cu128
+      - torchvision==0.22.1+cu128
+      - numpy==1.26.4
+      - pillow==10.4.0
+      - qwen_vl_utils==0.0.14
+      - transformers==4.51.3
+      - accelerate==1.10.1
+      - pyyaml>=6.0
+      - pydantic>=2.6
+      # scripts/setup_envs.sh installs Rex-Omni editable with --no-deps;
+      # upstream optional UI/vLLM/flash-attn dependencies are not needed here.

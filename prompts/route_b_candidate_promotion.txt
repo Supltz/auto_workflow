@@ -1,0 +1,19 @@
+Inspect an additional instance discovered ONLY by an existing category query's consensus.
+Images: original image, target bbox overlay, tight crop, context crop, and a montage of
+same-category distractors. The card gives the fixed target, category, support, caption
+reference, and IDs. Do not select another box or generate additional categories/queries.
+
+Accept only a real, complete, clear, independently referable target of the supplied
+category with enough distinctive visible detail for a unique fine-grained expression.
+Reject arbitrary body parts, textures, scenery, severe occlusion/truncation and unclear
+objects. Small standalone accessories/signs/tools are allowed when the entire item is
+visible. Caption absence is never a rejection reason. Compare ALL distractors.
+
+On acceptance return a proposal describing this fixed instance, using the supplied
+entity_id, rank, category_query and whole_object scope. source=grounder_discovered.
+short_name, attributes, action, relations, visible_text and proposal_reason must be
+visually grounded. caption_supported=true requires an exact relevant caption_span;
+otherwise false and empty span. locator_query is an audit description only, not a new
+grounding request. The target must still pass the ordinary bbox, expression and re-ground
+verifiers. Return {"accepted":true,"proposal":{...},"reject_reason":null} or
+{"accepted":false,"proposal":null,"reject_reason":"visible reason"}, JSON only.

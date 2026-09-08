@@ -1,0 +1,26 @@
+project_root: .
+seed: 42
+num_images: 1962
+manifest: data/manifest.jsonl
+sample_ids: data/sample_ids.txt
+images_dir: data/images
+failures_file: outputs/failures.jsonl
+provenance_file: artifacts/run_provenance.jsonl
+prompt_version: v1
+dataset:
+  repo_id: Tongyi-DataEngine/SA1B-Paired-Captions-Images
+  revision: master
+  shard: data/train-0000-of-0013.parquet
+  download_dir: data/downloads/SA1B-Paired-Captions-Images
+  schema_output: artifacts/data_schema.json
+  request_timeout_seconds: 60
+  download_workers: 16
+paths:
+  masks: outputs/masks
+  grounded_entities: outputs/grounded_entities
+  grounder_outputs: outputs/grounder_outputs
+  verified_regions: outputs/verified_regions
+  rejected_regions: outputs/rejected_regions
+  human_review: outputs/human_review
+route_configs:
+  B: configs/route_b.yaml
