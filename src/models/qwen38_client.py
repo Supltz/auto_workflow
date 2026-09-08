@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
@@ -143,12 +144,35 @@ class Qwen38Client:
             },
         }
         headers = {"Authorization": f"Bearer {self.config.get('api_key', 'local')}"}
-        response = requests.post(
-            endpoint,
-            json=payload,
-            headers=headers,
-            timeout=float(self.config.get("request_timeout_seconds", 600)),
-        )
+        # Transport retries are separate from model-answer/schema correction.
+        # Resend the full multimodal payload; never silently discard a target on 5xx.
+        retry_delays = (2, 5)
+        for attempt in range(len(retry_delays) + 1):
+            response = requests.post(
+                endpoint,
+                json=payload,
+                headers=headers,
+                timeout=float(self.config.get("request_timeout_seconds", 600)),
+            )
+            if response.status_code not in {500, 502, 503, 504}:
+                break
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+            error = body.get("error", body) if isinstance(body, dict) else {}
+            detail = error.get("message") if isinstance(error, dict) else None
+            delay = retry_delays[attempt] if attempt < len(retry_delays) else None
+            print(
+                f"[qwen_http] status={response.status_code} attempt={attempt + 1}/3 "
+                f"server_error={str(detail or response.text)[:2000]!r} "
+                + (f"retry_in={delay}s" if delay is not None else "retries_exhausted"),
+                flush=True,
+            )
+            if delay is None:
+                break  # Existing HTTPError handling below keeps exhaustion fatal.
+            response.close()
+            time.sleep(delay)
         if response.status_code >= 400:
             # Inspect only the server error, never the submitted image/prompt payload.
             try:
