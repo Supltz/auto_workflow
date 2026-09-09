@@ -38,9 +38,9 @@ uses this same selection; the manifest and seed must remain fixed during resume.
    visible factuality, grammar, uniqueness against distractors, and re-ground agreement.
 11. `refine_generate` / `refine_reground` / `refine_verify`: a factually sound but weak or
     ambiguous expression may be minimally revised and round-trip tested up to two times.
-12. `finalize`: retain the latest accepted revision, remove identical expressions or
-    near-identical same-image targets at bbox IoU >= 0.98, then quality-rank and keep at most
-    30 per source. Zero accepted targets is valid.
+12. `finalize`: retain the latest accepted revision, deduplicate identical same-image
+    expressions (trimmed and case-folded) directly, then quality-rank targets using the
+    shared identity rule below and keep at most 30 per source. Zero accepted targets is valid.
 13. `review`: export every final verified result. Each JPG contains
     exactly one bbox and its expression in the top-left panel.
 
@@ -55,3 +55,25 @@ All Qwen requests contain image inputs followed by one `user` text message consi
 the relevant `prompts/route_b_*.txt` instruction and a stage-specific JSON card. The code
 does not send a custom system message. Responses use strict JSON Schema, temperature 0,
 and disabled thinking.
+
+## Shared target deduplication
+
+Discovery, pre-QA alignment selection, and finalization use `src/routes/target_dedup.py`.
+Identical nonempty expressions within one image are always deduplicated, regardless of
+bbox overlap. For different expressions, same-image, same-category, same-scope boxes at
+IoU >= 0.98 are merged directly. Suspected duplicates at IoU >= 0.75, smaller/larger area
+ratio >= 0.70, and per-axis center offset <= 0.20 of the smaller box dimension receive
+one joint Qwen identity check. These thresholds are configurable in `configs/route_b.yaml`.
+The model sees the original, a numbered two-box overlay, and a shared context crop.
+Only `same_object` merges; `different_objects` and `uncertain` retain both candidates.
+Invalid responses or service errors stop processing instead of silently dropping targets.
+Final selection retains the strongest verified record and records its direct duplicate
+links and decision evidence in rejected records; overlapping chains are not merged transitively.
+
+Identity decisions and their input pairs are cached under `outputs/route_b/target_dedup/`.
+Cache keys include boxes, image identity/stat, model configuration, prompt, and contract.
+`--stage finalize --check-only` performs a read-only probe (exit 3 for missing decisions).
+The managed runner starts Qwen only when needed and still materializes final outputs when
+all decisions are cached. To reprocess existing verified attempts without generation or
+re-grounding, run `--stage finalize --resume` with Qwen available for uncached pairs, then
+`--stage review --overwrite`, using the original selection range and output directory.

@@ -37,6 +37,7 @@ from src.routes.route_b_stages import (
     verify_entity_bboxes,
     verify_generated_expressions,
 )
+from src.routes.target_dedup import TargetDeduplicator
 from src.utils.config import load_yaml, resolve_path
 from src.utils.io import add_job_arguments, prepare_output, read_jsonl, rewrite_jsonl_atomic
 from src.utils.provenance import record_run
@@ -130,7 +131,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.check_only and args.stage not in {
         "entities", "align", "promote", "bbox_verify", "ocr", "describe",
-        "expression_verify", "refine_generate", "refine_verify",
+        "expression_verify", "refine_generate", "refine_verify", "finalize",
     }:
         parser.error("--check-only is supported only for Qwen stages")
     CHECK_ONLY.set(args.check_only)
@@ -179,10 +180,14 @@ def main() -> None:
         record_run(experiment["provenance_file"], config["route"],
                    {**config, "models": models_config}, stage=args.stage)
 
+    deduplicator = TargetDeduplicator(config=config, qwen_config=qwen_config,
+                                       output_root=output_root)
+
     def target_alignments():
         return unique_alignments([*_records(alignment_output, selected_ids),
                                   *_records(promotion_output, selected_ids)],
-                                 float(config.get("final_target_dedup_iou", 0.98)))
+                                 float(config.get("final_target_dedup_iou", 0.98)),
+                                 deduplicator=deduplicator)
 
     # Old refinement rows are never attached to a newly discovered target by ID alone.
     if args.stage in {"refine_generate", "refine_reground", "refine_verify", "refine", "finalize"}:
@@ -258,6 +263,7 @@ def main() -> None:
 
     if args.stage in {"promote", "all"}:
         promote_candidates(
+            deduplicator=deduplicator,
             candidates=_records(grounded_entities_output, selected_ids),
             alignments=_records(alignment_output, selected_ids), manifest=manifest,
             output_path=promotion_output, failures_path=failures,
@@ -514,6 +520,7 @@ def main() -> None:
             refinement_verification_output, selected_ids
         )
         materialize_final_route_b_outputs(
+            deduplicator=deduplicator,
             initial_verifications=initial_verifications,
             refinement_verifications=refinement_verifications,
             grounding_rejections=_records(grounding_rejections_output, selected_ids),
@@ -527,6 +534,7 @@ def main() -> None:
 
     if args.stage in {"finalize", "all"}:
         materialize_final_route_b_outputs(
+            deduplicator=deduplicator,
             initial_verifications=_records(
                 expression_verification_output, selected_ids
             ),
@@ -541,6 +549,9 @@ def main() -> None:
             dedup_iou_threshold=float(config.get("final_target_dedup_iou", 0.98)),
             max_per_source_image=int(config.get("final_max_per_source_image", 30)),
         )
+
+    if args.check_only:
+        return
 
     if args.stage in {"finalize", "review", "all"}:
         counts = Counter(r["image_id"] for r in _records(verified_output, selected_ids))

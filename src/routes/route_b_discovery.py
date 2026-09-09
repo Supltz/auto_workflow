@@ -8,6 +8,7 @@ from collections import defaultdict
 from src.models.qwen38_client import ModelContractError, Qwen38Client
 from src.regions.route_b_artifacts import ensure_artifacts
 from src.routes.route_b_checkpoint import checkpointed, fingerprint
+from src.routes.target_dedup import TargetDeduplicator
 from src.schema import CandidatePromotion
 from src.utils.geometry import iou
 from src.utils.images import create_labeled_crop_montage, open_rgb, save_numbered_bbox_overlay
@@ -31,8 +32,9 @@ def peer_candidates(image_id, query, candidates, preferred=()):
     return result
 
 
-def unique_alignments(records, threshold=0.98):
+def unique_alignments(records, threshold=0.98, *, deduplicator=None):
     """Keep one target before bbox/OCR/writer; audit duplicate alignments as rejected."""
+    deduplicator = deduplicator or TargetDeduplicator(config={"final_target_dedup_iou": threshold})
     kept = []
     result = []
 
@@ -50,12 +52,7 @@ def unique_alignments(records, threshold=0.98):
                 (
                     other
                     for other in kept
-                    if other["image_id"] == record["image_id"]
-                    and iou(
-                        tuple(other["selected_candidate"]["bbox_xyxy"]),
-                        tuple(record["selected_candidate"]["bbox_xyxy"]),
-                    )
-                    >= threshold
+                    if deduplicator.compare(other, record)["same_object"]
                 ),
                 None,
             )
@@ -66,6 +63,8 @@ def unique_alignments(records, threshold=0.98):
             record = {
                 **record,
                 "accepted": False,
+                "duplicate_of_region_id": duplicate["selected_candidate"]["region_id"],
+                "target_dedup_audit": deduplicator.compare(duplicate, record),
                 "alignment": {
                     **record["alignment"],
                     "reject_reason": f"duplicate target of {duplicate['entity_id']}",
@@ -77,8 +76,9 @@ def unique_alignments(records, threshold=0.98):
     return result
 
 
-def promotion_tasks(candidates, alignments, config):
+def promotion_tasks(candidates, alignments, config, *, deduplicator=None):
     """Never use locator-only consensus or add a new category universe."""
+    deduplicator = deduplicator or TargetDeduplicator(config=config)
     matched = [a for a in alignments if a["accepted"]]
     by_image = defaultdict(list)
     for c in candidates:
@@ -87,8 +87,7 @@ def promotion_tasks(candidates, alignments, config):
         if c["grounder_support"] < config["aggregation"]["min_grounder_support"]:
             continue
         if any(
-            a["image_id"] == c["image_id"]
-            and iou(tuple(a["selected_candidate"]["bbox_xyxy"]), tuple(c["bbox_xyxy"])) >= 0.85
+            deduplicator.compare(a, c)["same_object"]
             for a in matched
         ):
             continue
@@ -100,7 +99,7 @@ def promotion_tasks(candidates, alignments, config):
             options,
             key=lambda c: (-c["grounder_support"], -c["median_pairwise_iou"], c["region_id"]),
         ):
-            if any(iou(tuple(c["bbox_xyxy"]), tuple(x["bbox_xyxy"])) >= 0.98 for x in selected):
+            if any(deduplicator.compare(c, x)["same_object"] for x in selected):
                 continue
             selected.append(c)
         for rank, c in enumerate(selected[: int(config.get("max_promotions_per_image", 16))], 1):
@@ -252,5 +251,6 @@ def _promote_tasks(
     )
 
 
-def promote_candidates(*, candidates, alignments, **kwargs):
-    _promote_tasks(tasks=promotion_tasks(candidates, alignments, kwargs["config"]), **kwargs)
+def promote_candidates(*, candidates, alignments, deduplicator=None, **kwargs):
+    _promote_tasks(tasks=promotion_tasks(candidates, alignments, kwargs["config"],
+                                         deduplicator=deduplicator), **kwargs)

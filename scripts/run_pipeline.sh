@@ -93,6 +93,9 @@ qwen_stage() {
     --start-index "${START_INDEX}" --end-index "${END_INDEX}" || status=$?
   if (( status == 0 )); then
     echo "Completed: ${stage}"
+    if [[ "${stage}" == finalize ]]; then
+      cpu_or_ground_stage finalize
+    fi
     return 0
   fi
   if (( status != 3 )); then
@@ -143,7 +146,8 @@ for round in 1 2; do
   stop_qwen
 done
 
-cpu_or_ground_stage finalize
+qwen_stage finalize
+stop_qwen
 run_step bash scripts/run_route_b.sh --stage review --overwrite \
   --start-index "${START_INDEX}" --end-index "${END_INDEX}"
 
@@ -153,8 +157,15 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from src.utils.geometry import iou
+from src.routes.route_b_checkpoint import CHECK_ONLY
+from src.routes.target_dedup import TargetDeduplicator
 from src.utils.config import load_yaml
+
+CHECK_ONLY.set(True)
+dedup_config = load_yaml("configs/route_b.yaml")
+deduplicator = TargetDeduplicator(
+    config=dedup_config, qwen_config=load_yaml(dedup_config["models_config"])["qwen"],
+    output_root=Path("outputs"))
 
 verified_path = Path("outputs/verified_regions/route_b.jsonl")
 review_root = Path("outputs/human_review/route_b")
@@ -193,7 +204,7 @@ assert len(
 for source_records in verified_by_source.values():
     for first_index, first in enumerate(source_records):
         for second in source_records[first_index + 1 :]:
-            assert iou(tuple(first["bbox_xyxy"]), tuple(second["bbox_xyxy"])) < 0.98
+            assert not deduplicator.compare(first, second)["same_object"]
 print(
     json.dumps(
         {

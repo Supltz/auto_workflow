@@ -28,7 +28,8 @@ from src.regions.target_scope import (
 from src.routes.model_failures import report_model_failures, skipped_record
 from src.routes.proposal_coverage import report_proposal_coverage
 from src.routes.proposal_priority import prioritize_proposals
-from src.routes.route_b_checkpoint import checkpointed, fingerprint, semantic, stamp
+from src.routes.route_b_checkpoint import CHECK_ONLY, checkpointed, fingerprint, semantic, stamp
+from src.routes.target_dedup import TargetDeduplicator
 from src.schema import (
     EntityAlignmentDecision,
     EntityBBoxVerification,
@@ -36,7 +37,6 @@ from src.schema import (
     ReferringExpressionDraft,
     VisualEntitySet,
 )
-from src.utils.geometry import iou
 from src.utils.images import (
     create_labeled_crop_montage,
     open_rgb,
@@ -1226,90 +1226,46 @@ def _final_record_quality(record: dict[str, Any]) -> tuple[float, ...]:
     )
 
 
-def _duplicate_target_components(
-    candidates: list[dict[str, Any]], iou_threshold: float
-) -> list[list[dict[str, Any]]]:
-    """Group duplicate expressions or near-identical target boxes within one image."""
-    parent = list(range(len(candidates)))
-
-    def find(index: int) -> int:
-        while parent[index] != index:
-            parent[index] = parent[parent[index]]
-            index = parent[index]
-        return index
-
-    def union(first: int, second: int) -> None:
-        first_root, second_root = find(first), find(second)
-        if first_root != second_root:
-            parent[second_root] = first_root
-
-    normalized = [
-        item["final_referring_expression"].strip().casefold()
-        for item in candidates
-    ]
-    for first in range(len(candidates)):
-        first_box = tuple(candidates[first]["bbox_xyxy"])
-        for second in range(first + 1, len(candidates)):
-            same_expression = normalized[first] == normalized[second]
-            same_target = (
-                iou(first_box, tuple(candidates[second]["bbox_xyxy"]))
-                >= iou_threshold
-            )
-            if same_expression or same_target:
-                union(first, second)
-
-    components: defaultdict[int, list[dict[str, Any]]] = defaultdict(list)
-    for index, record in enumerate(candidates):
-        components[find(index)].append(record)
-    return list(components.values())
-
-
 def _deduplicate_final_records(
-    records: list[dict[str, Any]], iou_threshold: float
+    records: list[dict[str, Any]], iou_threshold: float, *, deduplicator=None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Keep one best expression for each same-image spatial or textual target.
+    """Keep the strongest verified target; require a direct match to its winner.
 
-    Upstream caption entities can independently rediscover the same physical object.
-    A very high IoU threshold removes only near-identical target boxes. Identical
-    referring expressions within one source image are also duplicates even if the
-    selected boxes differ, because the expression would not uniquely select one.
+    Do not transitively merge A and C merely because both overlap B. Identical
+    expressions within one image are always deduplicated, regardless of geometry.
     """
+    deduplicator = deduplicator or TargetDeduplicator(
+        config={"final_target_dedup_iou": iou_threshold})
     by_image: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         by_image[record["image_id"]].append(record)
-
-    kept: list[dict[str, Any]] = []
-    rejected: list[dict[str, Any]] = []
+    kept, rejected = [], []
     for image_id in sorted(by_image):
-        candidates = sorted(by_image[image_id], key=lambda item: item["region_id"])
-        for component in _duplicate_target_components(candidates, iou_threshold):
-            # Sorting by region ID first gives deterministic ascending tie-breaking.
-            ranked = sorted(component, key=lambda item: item["region_id"])
-            ranked.sort(key=_final_record_quality, reverse=True)
-            winner = ranked[0]
-            kept.append(winner)
-            winner_expression = winner["final_referring_expression"].strip().casefold()
-            for duplicate in ranked[1:]:
-                overlap = iou(
-                    tuple(winner["bbox_xyxy"]), tuple(duplicate["bbox_xyxy"])
-                )
-                same_expression = (
-                    duplicate["final_referring_expression"].strip().casefold()
-                    == winner_expression
-                )
-                rejected.append(
-                    {
-                        **duplicate,
-                        "stage": "final_target_deduplication",
-                        "reject_reason": (
-                            "duplicate_referring_expression"
-                            if same_expression
-                            else "duplicate_target_region"
-                        ),
-                        "duplicate_of_region_id": winner["region_id"],
-                        "duplicate_iou": overlap,
-                    }
-                )
+        ranked = sorted(by_image[image_id], key=lambda item: item["region_id"])
+        ranked.sort(key=_final_record_quality, reverse=True)
+        winners = []
+        for record in ranked:
+            expression = record["final_referring_expression"].strip().casefold()
+            # Resolve exact text duplicates before considering any visual comparison.
+            ordered_winners = sorted(
+                winners,
+                key=lambda w: w["final_referring_expression"].strip().casefold() != expression,
+            )
+            for winner in ordered_winners:
+                audit = deduplicator.compare(winner, record)
+                if audit["same_object"]:
+                    rejected.append({**record, "accepted": False,
+                                     "stage": "final_target_deduplication",
+                                     "reject_reason": ("duplicate_referring_expression"
+                                                       if audit.get("method") == "exact_expression"
+                                                       else "duplicate_target_region"),
+                                     "duplicate_of_region_id": winner["region_id"],
+                                     "duplicate_iou": audit["iou"],
+                                     "target_dedup_audit": audit})
+                    break
+            else:
+                winners.append(record)
+        kept.extend(winners)
     return kept, rejected
 
 
@@ -1324,6 +1280,7 @@ def materialize_final_route_b_outputs(
     rejected_path: Path,
     dedup_iou_threshold: float = 0.98,
     max_per_source_image: int = 30,
+    deduplicator=None,
 ) -> None:
     """Select the latest attempt for each target and preserve every rejection stage."""
     latest: dict[str, dict[str, Any]] = {}
@@ -1343,8 +1300,10 @@ def materialize_final_route_b_outputs(
                            "reject_reason": "target_scope_contract_missing_or_failed"}
     accepted_records = [record for record in latest.values() if record["accepted"]]
     accepted_records, dedup_rejections = _deduplicate_final_records(
-        accepted_records, dedup_iou_threshold
+        accepted_records, dedup_iou_threshold, deduplicator=deduplicator
     )
+    if CHECK_ONLY.get():
+        return
     capped = []
     per_source = defaultdict(list)
     for record in accepted_records:

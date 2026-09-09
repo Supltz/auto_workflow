@@ -1,0 +1,11 @@
+Determine whether target 1 and target 2 refer to the SAME physical object instance.
+Images are: the unmodified source, the source with numbered boxes (1 red, 2 cyan),
+and an unmodified shared context crop. Target coordinates use source-image pixels.
+Small detection boundary differences do not make a new object. Inspect the actual
+visible objects, their centers, boundaries and surrounding context. Overlap alone,
+similar appearance, or similar descriptions do not establish identity.
+Two adjacent or occluding objects are different instances. An object and its part,
+or a group and one member, must not be merged. If the evidence cannot distinguish
+these possibilities, return uncertain. Do not guess identity from box overlap.
+Return only JSON: {"decision": "same_object" | "different_objects" | "uncertain",
+"reason": "brief explanation of the visual evidence"}.

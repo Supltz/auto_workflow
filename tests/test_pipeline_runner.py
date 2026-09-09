@@ -24,7 +24,10 @@ class PipelineRunnerTests(unittest.TestCase):
         self.log = self.root / "calls"
         python = self.root / "bin" / "fake-python"
         python.write_text("""#!/usr/bin/env bash
-if [[ " $* " == *" --check-only "* ]]; then exit 3; fi
+if [[ " $* " == *" --check-only "* ]]; then
+  if [[ "${CACHED_FINALIZE:-0}" == 1 && " $* " == *" --stage finalize "* ]]; then exit 0; fi
+  exit 3
+fi
 if [[ "$1" == "-" ]]; then cat >/dev/null; echo acceptance >>"$CALL_LOG"; exit 0; fi
 while (( $# )); do
   if [[ "$1" == "--stage" ]]; then echo "$2" >>"$CALL_LOG"; break; fi
@@ -60,6 +63,14 @@ if [[ "${BLOCK_STAGE:-0}" == 1 ]]; then exec sleep 300; fi
             "refine_generate", "refine_reground", "refine_verify",
             "refine_generate", "refine_reground", "refine_verify",
             "finalize", "review", "acceptance"])
+
+    def test_cached_final_identity_still_materializes_outputs(self):
+        self.env["CACHED_FINALIZE"] = "1"
+        process = self.run_process()
+        _, errors = process.communicate(timeout=90)
+        self.assertEqual(process.returncode, 0, errors)
+        self.assertEqual(self.log.read_text().splitlines()[-3:],
+                         ["finalize", "review", "acceptance"])
 
     def test_termination_reports_resumable_exit(self):
         self.env["BLOCK_STAGE"] = "1"

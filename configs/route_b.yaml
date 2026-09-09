@@ -78,3 +78,7 @@ aggregation:
 final_max_per_source_image: 30
 review_max_per_source_image: 30
 final_target_dedup_iou: 0.98
+target_dedup_suspect_iou: 0.75
+target_dedup_min_area_ratio: 0.70
+target_dedup_max_center_offset: 0.20
+target_dedup_prompt: prompts/route_b_target_identity.txt
