@@ -30,6 +30,7 @@ def target(record):
         "bbox_xyxy": list(candidate["bbox_xyxy"]),
         "category": str(entity.get("category_query") or candidate.get("category_query")
                         or record.get("category") or "").strip().casefold(),
+        "expression": str(record.get("final_referring_expression") or "").strip(),
         "scope": entity.get("scope", candidate.get("scope", record.get("scope"))),
     }
 
@@ -61,11 +62,12 @@ class TargetDeduplicator:
                     "iou": iou(tuple(a["bbox_xyxy"]), tuple(b["bbox_xyxy"]))}
         overlap = iou(tuple(a["bbox_xyxy"]), tuple(b["bbox_xyxy"]))
         base = {"iou": overlap, "same_object": False, "method": "geometry"}
-        if (a["image_id"] != b["image_id"] or not a["category"]
-                or a["category"] != b["category"] or not a["scope"]
+        if (a["image_id"] != b["image_id"] or not a["scope"]
                 or a["scope"] != b["scope"]):
-            return {**base, "reason": "different_image_category_or_scope"}
-        if overlap >= self.exact_iou:
+            return {**base, "reason": "different_image_or_scope"}
+        # Category labels can differ for the same physical target. Cross-category
+        # pairs need visual verification even when their boxes are identical.
+        if a["category"] and a["category"] == b["category"] and overlap >= self.exact_iou:
             return {**base, "same_object": True, "reason": "near_identical_boxes"}
         boxes = [a["bbox_xyxy"], b["bbox_xyxy"]]
         areas = [area(tuple(box)) for box in boxes]
@@ -82,7 +84,7 @@ class TargetDeduplicator:
         prompt = self.prompt_path.read_text()
         source = Path(pair[0]["source_image"])
         stat = source.stat()
-        signature = fingerprint({"contract": "target_identity_v1", "pair": pair,
+        signature = fingerprint({"contract": "target_identity_v2", "pair": pair,
                                  "source": [str(source.resolve()), stat.st_size, stat.st_mtime_ns],
                                  "prompt": prompt, "model": self.qwen_config})
         cache_path = self.root / "decisions" / f"{signature}.json"

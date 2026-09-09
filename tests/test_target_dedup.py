@@ -1,4 +1,5 @@
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -90,12 +91,55 @@ class TargetDedupTests(unittest.TestCase):
             model.assert_called_once()
 
     def test_scope_category_image_and_disjoint_boxes_are_not_merged(self):
-        variants = [{'scope': 'object_part'}, {'category': 'truck', 'category_query': 'truck'},
+        variants = [{'scope': 'object_part'},
                     {'image_id': 'other'}, {'bbox_xyxy': [0, 0, 110, 50]}]
         with self.answer() as model:
             for changes in variants:
                 self.assertFalse(self.matcher.compare(self.a, {**self.b, **changes})['same_object'])
             model.assert_not_called()
+
+    def test_cross_category_real_duplicate_regressions(self):
+        cases = [
+            ('branch', 'tree', [897, 1287, 2248, 1500], [861, 1286, 2248, 1500],
+             'the leafy green branches in the foreground that are slightly out of focus',
+             'the out-of-focus green leafy tree branches in the foreground obscuring the city buildings'),
+            ('tower', 'ruin', [876, 532, 1049, 967], [875, 532, 1049, 967],
+             'the tall rectangular stone tower with a crenellated top standing to the left of the ruined walls',
+             'the tall, rectangular stone tower with a crenellated top, standing to the left of the lower ruined walls'),
+        ]
+        Image.new('RGB', (2248, 1500)).save(self.source)
+        for cat_a, cat_b, box_a, box_b, text_a, text_b in cases:
+            with self.subTest(categories=(cat_a, cat_b)), self.answer() as model:
+                a = {**self.record(cat_a, box_a, 1), 'category': cat_a,
+                     'category_query': cat_a, 'final_referring_expression': text_a}
+                b = {**self.record(cat_b, box_b, 2), 'category': cat_b,
+                     'category_query': cat_b, 'final_referring_expression': text_b}
+                kept, rejected = _deduplicate_final_records([a, b], .98,
+                                                            deduplicator=self.matcher)
+                self.assertEqual(len(kept), 1)
+                self.assertEqual(rejected[0]['target_dedup_audit']['method'], 'vlm')
+                model.assert_called_once()
+                payload = json.loads(model.call_args.kwargs['extra_text'])
+                self.assertEqual({t['expression'] for t in payload['targets']}, {text_a, text_b})
+                alignment = {**a, 'selected_candidate': a,
+                             'entity': {'category_query': cat_a, 'scope': 'whole_object'}}
+                self.assertEqual(promotion_tasks([b], [alignment], self.config,
+                                                 deduplicator=self.matcher), [])
+
+    def test_cross_category_identical_boxes_require_visual_evidence(self):
+        for decision in ['different_objects', 'uncertain']:
+            with self.subTest(decision=decision), self.answer(decision) as model:
+                b = {**self.b, 'category_query': 'truck', 'bbox_xyxy': VAN_A}
+                audit = self.new_matcher(model=decision).compare(self.a, b)
+                self.assertFalse(audit['same_object'])
+                self.assertEqual(audit['method'], 'vlm')
+                model.assert_called_once()
+
+    def test_expression_change_invalidates_identity_cache(self):
+        with self.answer() as model:
+            self.matcher.compare(self.a, self.b)
+            self.matcher.compare(self.a, {**self.b, 'final_referring_expression': 'a revised description'})
+            self.assertEqual(model.call_count, 2)
 
     def test_identical_expression_deduplicates_disjoint_boxes_without_model(self):
         b = {**self.b, 'bbox_xyxy': [0, 0, 110, 50],

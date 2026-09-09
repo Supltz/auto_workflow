@@ -1,6 +1,10 @@
 Determine whether target 1 and target 2 refer to the SAME physical object instance.
 Images are: the unmodified source, the source with numbered boxes (1 red, 2 cyan),
 and an unmodified shared context crop. Target coordinates use source-image pixels.
+Category labels and expressions are fallible descriptions, not object identities.
+Different labels (such as tower and ruin, or branch and tree) may describe the
+same target. Compare the visible extent actually selected by each box and use
+the expressions as supporting evidence, not proof of identity.
 Small detection boundary differences do not make a new object. Inspect the actual
 visible objects, their centers, boundaries and surrounding context. Overlap alone,
 similar appearance, or similar descriptions do not establish identity.
