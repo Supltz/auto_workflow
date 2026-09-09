@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import re
 import shutil
-from collections import defaultdict
+from collections import Counter, defaultdict
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -109,12 +109,17 @@ def export_route_b_review(
     review_root.mkdir(parents=True, exist_ok=True)
     selected = _select(verified, max_per_source_image)
 
+    totals = Counter(record["image_id"] for record in selected)
+    positions = Counter()
     rows = []
     for index, record in enumerate(selected, 1):
         if index == 1 or index % 10 == 0 or index == len(selected):
             print(f"[review] rendering={index}/{len(selected)}", flush=True)
-        safe_entity = re.sub(r"[^A-Za-z0-9_-]+", "_", record["entity_id"])
-        filename = f"{index:04d}_{record['image_id']}_{safe_entity}.jpg"
+        image_id = record["image_id"]
+        positions[image_id] += 1
+        safe_image_id = re.sub(r"[^A-Za-z0-9_-]+", "_", image_id)
+        filename = (f"{index:04d}_{safe_image_id}_box_"
+                    f"{positions[image_id]:02d}_of_{totals[image_id]:02d}.jpg")
         destination = review_root / filename
         image = open_rgb(record["source_image"])
         try:
