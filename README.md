@@ -27,7 +27,7 @@ GroundingDINO-SwinB. Model inference requires a suitable NVIDIA GPU runtime.
 The purpose is fine-grained object perception: an expression should identify one complete
 object through visible distinguishing attributes and relations, rather than merely naming
 its category. Automatic validation is not a guarantee of correctness; human review remains
-necessary. The default run selects 100 source images, **not** 100 output regions: each
+necessary. The default run processes all 1962 source images in the current manifest: each
 source may produce 0–30 accepted regions, each exported as a separate review image.
 
 ## How the pipeline works
@@ -127,7 +127,7 @@ bash scripts/run_pipeline.sh
 
 The runner preserves the stage sequence and two refinement passes. It starts and
 stops the Qwen service between model phases to release GPU memory. Range selection
-uses `ROUTE_B_START_INDEX` and `ROUTE_B_END_INDEX` (defaults 0 and 100).
+uses `ROUTE_B_START_INDEX` and `ROUTE_B_END_INDEX` (defaults 0 and 1962).
 Logs use `WORKFLOW_LOG_DIR` or `run_logs/`; `WORKFLOW_RUN_ID` labels the run.
 A termination signal stops active work and exits with status 75; an external
 supervisor may restart the runner to resume completed checkpoints.

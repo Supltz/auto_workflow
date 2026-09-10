@@ -1,6 +1,6 @@
 route: B_caption
 manifest: data/manifest.jsonl
-sample_size: 100
+sample_size: 1962
 sample_seed: 42
 models_config: configs/models.yaml
 

@@ -141,7 +141,7 @@ def main() -> None:
     experiment = load_yaml("configs/experiment.yaml")
     output_root = resolve_path(args.output_dir or "outputs")
     if args.end_index is None:
-        args.end_index = args.start_index + int(config.get("sample_size", 100))
+        args.end_index = args.start_index + int(config.get("sample_size", 1962))
     manifest = manifest_index(config["manifest"])
     manifest_rows = sampled_manifest_rows(
         config["manifest"], args.start_index, args.end_index,
