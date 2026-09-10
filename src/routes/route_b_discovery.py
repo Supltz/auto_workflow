@@ -160,9 +160,6 @@ def _promote_tasks(
         montage = root / "target_montages" / f"{stem}.jpg"
         image = open_rgb(source["image_path"])
         try:
-            save_numbered_bbox_overlay(
-                image, cards, numbered, highlight_id=candidate["instance_id"]
-            )
             create_labeled_crop_montage(
                 image, cards, montage, highlight_id=candidate["instance_id"]
             )
@@ -215,6 +212,16 @@ def _promote_tasks(
             )
             if not entity["caption_supported"]:
                 entity["caption_span"] = ""
+        # This view is not a promotion input. Publish it before checkpointing
+        # accepted targets so describe/verify/resume still see the same pixels.
+        if decision.accepted:
+            image = open_rgb(source["image_path"])
+            try:
+                save_numbered_bbox_overlay(
+                    image, cards, numbered, highlight_id=candidate["instance_id"]
+                )
+            finally:
+                image.close()
         return {
             "image_id": task["image_id"],
             "entity_id": task["entity_id"],

@@ -113,7 +113,8 @@ class ProposalPriorityTests(unittest.TestCase):
                 prompt.write_text("changed caption-first contract")
                 extract_caption_entities(**kwargs)
                 self.assertEqual(client.generate_json.call_count, 2)
-                self.assertTrue(list((root / "checkpoint_archive").glob("*.jsonl")))
+                self.assertFalse((root / "checkpoint_archive").exists())
+                self.assertTrue((root / "checkpoint_updates/entities.jsonl.json").is_file())
 
     def test_empty_recheck_recovery_empty_failure_and_zero_cap(self):
         empty = VisualEntitySet(entities=[])

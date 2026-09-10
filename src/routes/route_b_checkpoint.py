@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
+import time
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from src.utils.io import read_jsonl, rewrite_jsonl_atomic
+from src.utils.io import atomic_write_json, read_jsonl, rewrite_jsonl_atomic
 
 _SIGNATURES: ContextVar[dict[tuple[str, ...], str] | None] = ContextVar("signatures", default=None)
 CHECK_ONLY: ContextVar[bool] = ContextVar("check_only", default=False)
@@ -59,25 +62,52 @@ def signature_for(record, signatures):
     return signatures.get(key)
 
 
-def archive_and_replace(path: Path, records: list[dict[str, Any]]) -> None:
+def archive_and_replace(path: Path, records: list[dict[str, Any]], *, history_limit: int | None = None) -> None:
+    """Replace the active checkpoint atomically; full historical copies are opt-in.
+
+    The bounded update summary is diagnostic only, never a recovery input.
+    Existing archives are left alone when history is disabled.
+    """
+    if history_limit is None:
+        history_limit = int(os.environ.get("ROUTE_B_CHECKPOINT_HISTORY_LIMIT", "0"))
+    if history_limit < 0:
+        raise ValueError("checkpoint history limit must be non-negative")
+    old = None
+    archive = None
     if path.exists():
         old = list(read_jsonl(path))
         if old == records:
             return
-        if old:
+        if old and history_limit:
             archive = (
                 path.parent / "checkpoint_archive" / f"{path.stem}_{fingerprint(old)[:16]}.jsonl"
             )
             if not archive.exists():
                 rewrite_jsonl_atomic(archive, old)
     rewrite_jsonl_atomic(path, records)
+    if old is not None:
+        atomic_write_json(path.parent / "checkpoint_updates" / f"{path.name}.json", {
+            "stage_file": path.name, "updated_at": time.time(),
+            "before_digest": fingerprint(old), "after_digest": fingerprint(records),
+            "before_count": len(old), "after_count": len(records),
+            "status": "replaced", "history_limit": history_limit,
+        })
+    # Prune only this stage's recognized history, and only after successful replace.
+    if archive is not None:
+        pattern = re.compile(re.escape(path.stem) + r"_[0-9a-f]{16}\.jsonl")
+        histories = [p for p in archive.parent.iterdir()
+                     if pattern.fullmatch(p.name) and p.is_file() and not p.is_symlink()]
+        others = sorted((p for p in histories if p != archive),
+                        key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
+        for obsolete in others[max(0, history_limit - 1):]:
+            obsolete.unlink()
 
 
 def checkpointed(input_name: str, *, accepted_only: bool = False):
     """Keep only outputs matching exact semantic inputs and current prompts/config.
 
     Stamping happens on every successful append, so interruption preserves completed
-    items. Old unstamped Qwen outputs are archived, never guessed to be compatible.
+    items. Old unstamped outputs are invalidated, never guessed to be compatible.
     Unchanged items retain their checkpoints when another source image changes.
     """
 

@@ -1269,6 +1269,19 @@ def _deduplicate_final_records(
     return kept, rejected
 
 
+def rejection_summary(record, *, stage=None, reason=None):
+    """A small audit index, not another copy of stage checkpoints or image paths."""
+    keys = ("image_id", "entity_id", "entity_rank", "region_id", "instance_id",
+            "expression_id", "base_expression_id", "revision", "stage", "reject_reason",
+            "duplicate_of_region_id")
+    result = {key: record[key] for key in keys if key in record}
+    if stage is not None:
+        result["stage"] = stage
+    if reason is not None:
+        result["reject_reason"] = reason
+    return result
+
+
 def materialize_final_route_b_outputs(
     *,
     initial_verifications: list[dict[str, Any]],
@@ -1315,32 +1328,23 @@ def materialize_final_route_b_outputs(
         dedup_rejections.extend({**r, "stage": "final_cap", "reject_reason": "per_source_cap"}
                                 for r in ranked[max_per_source_image:])
     verified = [final_expression_record(record) for record in capped]
-    rejected: list[dict[str, Any]] = list(grounding_rejections)
-    rejected.extend(dedup_rejections)
+    rejected: list[dict[str, Any]] = [rejection_summary(r) for r in grounding_rejections]
+    rejected.extend(rejection_summary(r) for r in dedup_rejections)
     rejected.extend(
-        {
-            **record,
-            "stage": "entity_instance_alignment",
-            "reject_reason": record["alignment"]["reject_reason"],
-        }
+        rejection_summary(record, stage="entity_instance_alignment",
+                          reason=record["alignment"]["reject_reason"])
         for record in alignments
         if not record["accepted"]
     )
     rejected.extend(
-        {
-            **record,
-            "stage": "whole_entity_bbox_verification",
-            "reject_reason": record["bbox_verification"]["reject_reason"],
-        }
+        rejection_summary(record, stage="whole_entity_bbox_verification",
+                          reason=record["bbox_verification"]["reject_reason"])
         for record in bbox_records
         if not record["accepted"]
     )
     rejected.extend(
-        {
-            **record,
-            "stage": "final_expression_verification",
-            "reject_reason": record["reject_reason"],
-        }
+        rejection_summary(record, stage="final_expression_verification",
+                          reason=record["reject_reason"])
         for record in latest.values()
         if not record["accepted"]
     )

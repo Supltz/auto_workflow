@@ -297,3 +297,24 @@ checks and execution; `requirements/` contains dependencies/build patches; `docs
 describes stage contracts; `artifacts/` contains local generated provenance/schema reports.
 `data/` contains manifest metadata and untracked downloaded images. Runtime `outputs/`,
 `models/`, `third_party/` and `run_logs/` are intentionally excluded from commits.
+
+### Checkpoint history and diagnostic outputs
+
+Route B keeps the active checkpoint for resume, but no longer creates full historical
+checkpoint copies by default. Set `ROUTE_B_CHECKPOINT_HISTORY_LIMIT=N` to retain up
+to N recognized historical copies per stage when a nonempty checkpoint is replaced.
+The default is `0`; existing historical copies are left untouched in that mode.
+Replacement is atomic, and historical pruning occurs only after a successful
+replacement. A single update summary per stage in `checkpoint_updates/` records
+counts and digests; it is diagnostic information, not a recovery checkpoint.
+
+Promotion creates the highlighted numbered target image only for accepted targets.
+The images supplied to the promotion model are unchanged, and accepted targets keep
+the same numbered image for downstream stages.
+
+`rejected_regions/route_b.jsonl` is now a compact rejection index containing available
+image/entity/region/expression identifiers, revision, stage, rejection reason, and
+`duplicate_of_region_id` where applicable. It no longer duplicates nested stage
+payloads or intermediate image paths. Consumers that need detailed diagnostics
+should read the corresponding stage checkpoints before intermediates are cleaned.
+Accepted-result fields and acceptance rules are unchanged.
