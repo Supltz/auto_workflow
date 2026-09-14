@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+import os
 
 from src.models.qwen38_client import ModelContractError
 from src.regions.consensus import _mask_tight_box, cluster_stats, size_assessment
@@ -77,7 +78,16 @@ def repair_candidates(candidate, rules, limit=2):
         repaired = {**candidate, **cluster_stats(support, rules), **assessment,
                     "bbox_xyxy": list(box), "cluster_members": support,
                     "representative_grounder": grounder, "representative_method": method}
-        root = Path(candidate["verifier_overlay_path"]).parent.parent / "repairs"
+        # Resumed candidates can belong to immutable, read-only asset shards.
+        # New repairs belong to the current stage's output, not the old shard.
+        output_root = os.environ.get("OPD_STAGE_OUTPUT_ROOT")
+        if output_root:
+            root = Path(output_root)
+            if not root.is_absolute():
+                raise ValueError("OPD_STAGE_OUTPUT_ROOT must be absolute")
+            root = root / "grounded_entities/artifacts/route_b/repairs"
+        else:
+            root = Path(candidate["verifier_overlay_path"]).parent.parent / "repairs"
         plan_artifacts(repaired, root, float(rules["context_padding"]))
         result.append(repaired)
     result.sort(key=lambda r: (-r["grounder_support"], area(tuple(r["bbox_xyxy"]))))

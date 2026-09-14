@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from pathlib import Path
 from typing import Any
 
 from src.grounding.base import PhraseGrounder, run_phrase_worker, worker_parser
@@ -37,9 +39,19 @@ class GroundingDinoGrounder(PhraseGrounder):
             str(repo / config["model_config"]), str(resolve_path(config["local_path"]))
         )
         self.provenance = model_metadata(config, config, "v1")
+        self._image_cache: OrderedDict[tuple[str,int,int],tuple[Any,int,int]] = OrderedDict()
 
     def ground(self, image_path: str, phrase: str) -> list[dict[str, Any]]:
-        _, tensor = self._load_image(image_path)
+        path=Path(image_path);stat=path.stat();key=(str(path.resolve()),stat.st_size,stat.st_mtime_ns)
+        cached=self._image_cache.get(key)
+        if cached is None:
+            _,tensor=self._load_image(image_path)
+            from PIL import Image
+            with Image.open(image_path) as image:width,height=image.size
+            cached=(tensor,width,height);self._image_cache[key]=cached
+            while len(self._image_cache)>8:self._image_cache.popitem(last=False)
+        else:self._image_cache.move_to_end(key)
+        tensor,width,height=cached
         boxes, logits, detected_phrases = self._predict(
             model=self.model,
             image=tensor,
@@ -47,10 +59,6 @@ class GroundingDinoGrounder(PhraseGrounder):
             box_threshold=float(self.config.get("box_threshold", 0.25)),
             text_threshold=float(self.config.get("text_threshold", 0.20)),
         )
-        from PIL import Image
-
-        with Image.open(image_path) as image:
-            width, height = image.size
         detections = []
         for box, score, detected_phrase in zip(boxes.tolist(), logits.tolist(), detected_phrases):
             center_x, center_y, box_width, box_height = box
@@ -72,7 +80,8 @@ class GroundingDinoGrounder(PhraseGrounder):
 def main() -> None:
     args = worker_parser(__doc__ or "GroundingDINO worker").parse_args()
     config = load_yaml(args.model_config)["groundingdino"]
-    run_phrase_worker(GroundingDinoGrounder(config), args)
+    from src.grounding.resident import adapter
+    run_phrase_worker(adapter("groundingdino", config, GroundingDinoGrounder), args)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,41 @@ VAN_B = [1111.111111111111, 1198.5425425425424, 1220.7207207207207, 1244.9649649
 
 
 class TargetDedupTests(unittest.TestCase):
+    def test_project_relative_inputs_reuse_cache_from_task_cwd(self):
+        from src.utils.config import resolve_path
+        project=self.root/'project';(project/'data/images').mkdir(parents=True)
+        (project/'prompts').mkdir()
+        source=project/'data/images/source.png';source.write_bytes(self.source.read_bytes())
+        prompt=project/'prompts/identity.txt';prompt.write_text('same prompt')
+        task=self.root/'task';task.mkdir()
+        config={**self.config,'target_dedup_prompt':'prompts/identity.txt'}
+        first={**self.a,'source_image':'data/images/source.png'}
+        second={**self.b,'source_image':'data/images/source.png'}
+        before=copy.deepcopy([first,second]);cwd=Path.cwd()
+        try:
+            with patch('src.routes.target_dedup.resolve_path',side_effect=lambda p:resolve_path(p,root=project)):
+                os.chdir(project)
+                matcher=TargetDeduplicator(config=config,qwen_config={'name':'test'},output_root=task/'outputs')
+                with self.answer('different_objects') as model:
+                    original=matcher.compare(first,second)
+                    model.assert_called_once()
+                cache=Path(original['audit_path']);saved=cache.read_bytes()
+                os.chdir(task)
+                matcher=TargetDeduplicator(config=config,qwen_config={'name':'test'},output_root=Path('outputs'))
+                token=CHECK_ONLY.set(True)
+                try:
+                    with self.answer() as model:
+                        resumed=matcher.compare(first,second)
+                        model.assert_not_called()
+                finally:CHECK_ONLY.reset(token)
+                self.assertEqual(Path(resumed['audit_path']).resolve(),cache.resolve())
+                self.assertEqual(cache.read_bytes(),saved)
+                self.assertFalse(resumed['same_object'])
+                self.assertEqual([first,second],before)
+                source.unlink()
+                with self.assertRaises(FileNotFoundError):matcher.compare(first,second)
+        finally:os.chdir(cwd)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

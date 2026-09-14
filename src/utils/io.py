@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from src.schema import FailureRecord
+from src.utils.ram_checkpoint import checkpoint_boundary
 
 
 def read_jsonl(path: str | Path) -> Iterator[dict[str, Any]]:
@@ -74,6 +75,44 @@ class JsonlWriter:
             handle.flush()
             os.fsync(handle.fileno())
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        checkpoint_boundary()
+
+
+class SessionJsonlWriter(JsonlWriter):
+    """Hold one append handle and exclusive lock for a worker's lifetime.
+
+    The caller must own the task: no replacement/rotation of this path is
+    permitted until the context exits. Each append_many remains synchronous;
+    callers can commit results before committing their progress marker.
+    """
+
+    def __enter__(self):
+        self.handle = self.path.open("a", encoding="utf-8")
+        try:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BaseException:
+            self.handle.close()
+            raise
+        return self
+
+    def append(self, value: dict[str, Any]) -> None:
+        self.append_many([value])
+
+    def append_many(self, values: Iterable[dict[str, Any]]) -> None:
+        # Serialize before writing: a bad row must not partially write a batch.
+        encoded = "".join(
+            json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n"
+            for value in values
+        )
+        if encoded:
+            self.handle.write(encoded)
+            self.handle.flush()
+            os.fsync(self.handle.fileno())
+
+    def __exit__(self, *exc):
+        # Closing releases flock even on errors. No uncommitted application
+        # buffer is retained between requests.
+        self.handle.close()
 
 
 def rewrite_jsonl_atomic(path: str | Path, records: Iterable[dict[str, Any]]) -> None:

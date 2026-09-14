@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
+import fcntl
 import json
+import os
 import re
+import threading
 import time
+import uuid
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +21,106 @@ from PIL import Image
 from pydantic import BaseModel
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
+
+_POOL_LOCK = threading.Lock()
+
+
+@contextmanager
+def _allocation_lock(root: Path):
+    """Serialize ready-service selection with a GPU owner's drain transition."""
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / "allocation.lock").open("a") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        yield
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _metric_load(endpoint: str) -> int:
+    base = endpoint.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    try:
+        response = requests.get(base + "/metrics", timeout=0.5)
+        response.raise_for_status()
+    except requests.RequestException:
+        return 1 << 20
+    total, found = 0, False
+    for metric in ("vllm:num_requests_running", "vllm:num_requests_waiting",
+                   "vllm_num_requests_running", "vllm_num_requests_waiting"):
+        for match in re.finditer(
+            r"^" + re.escape(metric) + r"(?:\{[^}]*\})?\s+([0-9.eE+-]+)",
+            response.text, flags=re.MULTILINE,
+        ):
+            total += max(0, int(float(match.group(1))))
+            found = True
+    return total if found else 0
+
+
+def _reserve_once(model: str, fallback: str, timeout: float, excluded: set[str]):
+    """Choose the least-loaded ready endpoint and publish a short local lease."""
+    root_value = os.environ.get("QWEN_NODE_POOL")
+    if not root_value:
+        return fallback, None
+    root = Path(root_value)
+    # The filesystem lock is shared with qwen_pool.Service.drain().  Once drain
+    # publishes "draining", no client can create a new lease for that GPU.
+    with _POOL_LOCK, _allocation_lock(root):
+        candidates = []
+        now = time.time()
+        for path in (root / "services").glob("*.json"):
+            try:
+                value = json.loads(path.read_text())
+                endpoint = str(value["endpoint"]).rstrip("/")
+                if (value.get("version") != 1 or value.get("status") != "ready"
+                        or value.get("model") != model or endpoint in excluded
+                        or not _pid_alive(int(value["pid"]))):
+                    continue
+                directory = root / "reservations" / path.stem
+                directory.mkdir(parents=True, exist_ok=True)
+                active = 0
+                for ticket in directory.glob("*.json"):
+                    try:
+                        ticket_value = json.loads(ticket.read_text())
+                        expired = float(ticket_value.get("expires", 0)) < now
+                        dead = not _pid_alive(int(ticket_value.get("pid", -1)))
+                        if expired or dead:
+                            ticket.unlink(missing_ok=True)
+                        else:
+                            active += 1
+                    except (OSError, ValueError, TypeError, AttributeError):
+                        ticket.unlink(missing_ok=True)
+                candidates.append((endpoint, directory, active))
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+        if not candidates:
+            if os.environ.get('OPD_RESIDENT_POOL'):
+                # Never bypass the per-GPU gate by using a draining fallback.
+                return None, None
+            return fallback, None
+        scored = [(_metric_load(endpoint) + active, endpoint, directory)
+                  for endpoint, directory, active in candidates]
+        _, endpoint, directory = min(scored, key=lambda item: (item[0], item[1]))
+        ticket = directory / (uuid.uuid4().hex + ".json")
+        ticket.write_text(json.dumps({"pid": os.getpid(), "expires": now + timeout + 60}))
+    return endpoint, ticket
+
+
+def _reserve_endpoint(model: str, fallback: str, timeout: float, excluded: set[str]):
+    deadline = time.monotonic() + timeout
+    while True:
+        endpoint, ticket = _reserve_once(model, fallback, timeout, excluded)
+        if endpoint is not None:
+            return endpoint, ticket
+        if time.monotonic() >= deadline:
+            raise requests.Timeout('No ready Qwen endpoint; waiting for GPU inference slot timed out')
+        time.sleep(0.1)
 
 
 class QwenValidationError(ValueError):
@@ -127,7 +232,7 @@ class Qwen38Client:
         images: list[Image.Image],
         schema: type[BaseModel],
     ) -> str:
-        endpoint = self.config["api_base"].rstrip("/") + "/chat/completions"
+        fallback = os.environ.get("QWEN_TRANSPORT_API_BASE", self.config["api_base"]).rstrip("/")
         payload = {
             "model": self.config["name"],
             "messages": [{"role": "user", "content": self._content(prompt, images)}],
@@ -147,15 +252,42 @@ class Qwen38Client:
         # Transport retries are separate from model-answer/schema correction.
         # Resend the full multimodal payload; never silently discard a target on 5xx.
         retry_delays = (2, 5)
+        excluded: set[str] = set()
+        response = None
+        transport_error: requests.RequestException | None = None
+        request_timeout = float(self.config.get("request_timeout_seconds", 600))
         for attempt in range(len(retry_delays) + 1):
-            response = requests.post(
-                endpoint,
-                json=payload,
-                headers=headers,
-                timeout=float(self.config.get("request_timeout_seconds", 600)),
+            endpoint, ticket = _reserve_endpoint(
+                self.config["name"], fallback, request_timeout, excluded,
             )
+            try:
+                response = requests.post(
+                    endpoint + "/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=request_timeout,
+                )
+                transport_error = None
+            except requests.RequestException as exc:
+                transport_error = exc
+                excluded.add(endpoint)
+                delay = retry_delays[attempt] if attempt < len(retry_delays) else None
+                print(
+                    f"[qwen_http] endpoint={endpoint} attempt={attempt + 1}/3 "
+                    f"transport_error={str(exc)[:2000]!r} "
+                    + (f"retry_in={delay}s" if delay is not None else "retries_exhausted"),
+                    flush=True,
+                )
+                if delay is None:
+                    raise
+                time.sleep(delay)
+                continue
+            finally:
+                if ticket is not None:
+                    ticket.unlink(missing_ok=True)
             if response.status_code not in {500, 502, 503, 504}:
                 break
+            excluded.add(endpoint)
             try:
                 body = response.json()
             except ValueError:
@@ -173,6 +305,9 @@ class Qwen38Client:
                 break  # Existing HTTPError handling below keeps exhaustion fatal.
             response.close()
             time.sleep(delay)
+        if response is None:
+            assert transport_error is not None
+            raise transport_error
         if response.status_code >= 400:
             # Inspect only the server error, never the submitted image/prompt payload.
             try:

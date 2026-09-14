@@ -55,6 +55,19 @@ class Sam31Grounder(PhraseGrounder):
         finally:
             sam3_builder.build_sam3_multiplex_video_model = original_tracker_builder
         self.provenance = model_metadata(config, config, "v1")
+        self._session_id: str | None = None
+        self._session_path: str | None = None
+        self._image_size: tuple[int,int] | None = None
+        # SAM3 clears every cache for a new text prompt. Integer keys are the
+        # source-inspected, prompt-independent frame/backbone cache; text and
+        # tracking state keep their original reset behavior.
+        original_reset=self.predictor.model.reset_state
+        def reset_preserving_image_features(state):
+            visual={key:value for key,value in state.get("feature_cache",{}).items()
+                    if isinstance(key,int)}
+            original_reset(state)
+            state.setdefault("feature_cache",{}).update(visual)
+        self.predictor.model.reset_state=reset_preserving_image_features
 
     def _start_session(self, resource_path: str) -> str:
         """Start a session while tolerating SAM3/SAM3.1 init-state API drift."""
@@ -89,44 +102,34 @@ class Sam31Grounder(PhraseGrounder):
 
     def ground(self, image_path: str, phrase: str) -> list[dict[str, Any]]:
         from PIL import Image
+        resolved=str(resolve_path(image_path))
+        if self._session_path!=resolved:
+            self.close()
+            with Image.open(image_path) as image:self._image_size=image.size
+            self._session_id=self._start_session(resolved);self._session_path=resolved
+        width,height=self._image_size
+        response=self.predictor.handle_request({"type":"add_prompt","session_id":self._session_id,
+            "frame_index":0,"text":phrase,
+            "output_prob_thresh":float(self.config.get("score_threshold",0.5))})
+        outputs=response["outputs"]
+        scores=outputs.get("out_probs",[None]*len(outputs["out_boxes_xywh"]))
+        return [{"bbox_xyxy":normalized_xywh_to_xyxy(box,width,height),
+            "score":None if score is None else float(score),"mask":mask,
+            "metadata":{"sam_version":"sam3.1","object_id":int(object_id)}}
+            for box,score,mask,object_id in zip(outputs["out_boxes_xywh"],scores,
+                outputs["out_binary_masks"],outputs["out_obj_ids"])]
 
-        with Image.open(image_path) as image:
-            width, height = image.size
-        session_id = self._start_session(str(resolve_path(image_path)))
-        try:
-            response = self.predictor.handle_request(
-                {
-                    "type": "add_prompt",
-                    "session_id": session_id,
-                    "frame_index": 0,
-                    "text": phrase,
-                    "output_prob_thresh": float(self.config.get("score_threshold", 0.5)),
-                }
-            )
-            outputs = response["outputs"]
-            scores = outputs.get("out_probs", [None] * len(outputs["out_boxes_xywh"]))
-            return [
-                {
-                    "bbox_xyxy": normalized_xywh_to_xyxy(box, width, height),
-                    "score": None if score is None else float(score),
-                    "mask": mask,
-                    "metadata": {"sam_version": "sam3.1", "object_id": int(object_id)},
-                }
-                for box, score, mask, object_id in zip(
-                    outputs["out_boxes_xywh"],
-                    scores,
-                    outputs["out_binary_masks"],
-                    outputs["out_obj_ids"],
-                )
-            ]
-        finally:
-            self.predictor.handle_request({"type": "close_session", "session_id": session_id})
+    def close(self) -> None:
+        if self._session_id is not None:
+            self.predictor.handle_request({"type":"close_session","session_id":self._session_id})
+        self._session_id=None;self._session_path=None;self._image_size=None
 
 
 def main() -> None:
     args = worker_parser(__doc__ or "SAM3.1 worker").parse_args()
     config = load_yaml(args.model_config)["sam31"]
-    run_phrase_worker(Sam31Grounder(config), args)
+    from src.grounding.resident import adapter
+    run_phrase_worker(adapter("sam31", config, Sam31Grounder), args)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.models.qwen38_client import Qwen38Client
 from src.routes.route_b_checkpoint import CHECK_ONLY, StagePending, fingerprint
+from src.utils.config import resolve_path
 from src.utils.geometry import area, iou
 from src.utils.images import open_rgb, save_numbered_bbox_overlay
 from src.utils.io import atomic_write_json
@@ -48,7 +49,7 @@ class TargetDeduplicator:
             raise ValueError("invalid target dedup area ratio or center offset")
         self.qwen_config = qwen_config
         self.root = Path(output_root) / "route_b" / "target_dedup" if output_root else None
-        self.prompt_path = Path(config.get("target_dedup_prompt", "prompts/route_b_target_identity.txt"))
+        self.prompt_path = resolve_path(config.get("target_dedup_prompt", "prompts/route_b_target_identity.txt"))
         self.memory = {}
         self.client = None
 
@@ -82,7 +83,10 @@ class TargetDeduplicator:
             raise ValueError("suspected duplicate requires target identity verifier configuration")
         pair = sorted([a, b], key=fingerprint)
         prompt = self.prompt_path.read_text()
-        source = Path(pair[0]["source_image"])
+        # Inputs are project-relative, whereas output_root may be task-relative.
+        # Do not rewrite the saved pair: its exact representation is part of the
+        # decision cache key and must stay compatible with existing checkpoints.
+        source = resolve_path(pair[0]["source_image"])
         stat = source.stat()
         signature = fingerprint({"contract": "target_identity_v2", "pair": pair,
                                  "source": [str(source.resolve()), stat.st_size, stat.st_mtime_ns],

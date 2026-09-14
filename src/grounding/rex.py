@@ -43,40 +43,42 @@ class RexGrounder(PhraseGrounder):
             repetition_penalty=1.05,
         )
         self.provenance = model_metadata(config, config, "v1")
+        self.batch_size = max(1, int(os.environ.get("REX_BATCH_SIZE", config.get("batch_size", 2))))
 
-    def ground(self, image_path: str, phrase: str) -> list[dict[str, Any]]:
-        result = self.model.inference(
-            images=open_rgb(image_path), task="detection", categories=[phrase]
-        )[0]
+    @staticmethod
+    def _detections(result: dict[str, Any], phrase: str) -> list[dict[str, Any]]:
         extracted = result.get("extracted_predictions", {})
         predictions = extracted.get(phrase, [])
         if not predictions and len(extracted) == 1:
             predictions = next(iter(extracted.values()))
-        valid_predictions = [
-            prediction
-            for prediction in predictions
-            if prediction.get("type") == "box"
-        ]
-        return [
-            {
-                "bbox_xyxy": prediction["coords"],
-                "score": None,
-                "metadata": {
-                    "score_available": False,
-                    "raw_output": result.get("raw_output"),
-                    "raw_prediction_count": len(valid_predictions),
-                    "predictions_truncated": False,
-                },
-            }
-            for prediction in valid_predictions
-        ]
+        valid_predictions = [prediction for prediction in predictions if prediction.get("type") == "box"]
+        return [{"bbox_xyxy":prediction["coords"],"score":None,"metadata":{
+            "score_available":False,"raw_output":result.get("raw_output"),
+            "raw_prediction_count":len(valid_predictions),"predictions_truncated":False,
+        }} for prediction in valid_predictions]
+
+    def ground(self, image_path: str, phrase: str) -> list[dict[str, Any]]:
+        return self.ground_batch([(image_path,phrase)])[0]
+
+    def ground_batch(self, requests: list[tuple[str,str]]) -> list[list[dict[str,Any]]]:
+        images=[open_rgb(image_path) for image_path,_ in requests]
+        try:
+            # Rex's official wrapper treats each list item as an independent
+            # prompt/sample. This batches tensor work without combining phrases.
+            results=self.model.inference(images=images,task=["detection"]*len(images),
+                categories=[[phrase] for _,phrase in requests])
+            if len(results)!=len(requests):raise RuntimeError("Rex batch result count changed")
+            return [self._detections(result,phrase) for result,(_,phrase) in zip(results,requests)]
+        finally:
+            for image in images:image.close()
 
 
 def main() -> None:
     parser = worker_parser(__doc__ or "Rex worker")
     args = parser.parse_args()
     config = load_yaml(args.model_config)["rex"]
-    run_phrase_worker(RexGrounder(config), args)
+    from src.grounding.resident import adapter
+    run_phrase_worker(adapter("rex", config, RexGrounder), args)
 
 
 if __name__ == "__main__":
