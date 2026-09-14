@@ -11,12 +11,17 @@ Judge only visible evidence and the supplied entity card. Accept only if:
 - the box covers one complete person/object, rather
   than only a face, shirt, wheel, sign on an object, or another part;
 - essential parts are not severely cut off by the box or image boundary;
-- the crop is clear enough to support a detailed visual description;
+- the target and its extent are identifiable in the crop and full-image context;
 - all claimed proposal attributes used to align this entity are visibly compatible.
 
 Standalone accessories, signs and tools may be targets when they are complete independent
 items. The legacy field caption_attributes_visible evaluates proposal attributes, not
-caption membership. No source gets an exemption from completeness/clarity/detail checks.
+caption membership. Severe occlusion/truncation remains a rejection reason.
+Blur or distance alone is not a rejection reason. The legacy crop_is_clear field means
+the target and its extent can be identified, not that the crop is sharp. The legacy
+detail_is_sufficient field means enough discernible evidence supports a factual target
+description; fine texture, readable text and rich detail are not required. Do not invent
+attributes or boundaries when evidence is insufficient; reject unidentifiable targets.
 
 Copy the authoritative entity_id and instance_id appended to this request exactly.
 An instance ID may retain a category-pool prefix; do not derive entity_id from that

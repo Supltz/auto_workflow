@@ -182,10 +182,9 @@ def representative_box(
 def size_assessment(
     box: BBox, width: int, height: int, rules: dict[str, Any]
 ) -> dict[str, Any]:
-    """Apply Route B's hard size limits and preferred-size labels."""
+    """Apply area limits and size labels; short-side length is diagnostic only."""
     shortest_side = min(box[2] - box[0], box[3] - box[1])
     ratio = area_ratio(box, width, height)
-    min_short_side = float(rules["min_short_side_px"])
     min_area_ratio = float(rules["min_area_ratio"])
     max_area_ratio = float(rules["max_area_ratio"])
 
@@ -193,9 +192,7 @@ def size_assessment(
         return f"{value:g}".replace(".", "_")
 
     reject_reason = None
-    if shortest_side < min_short_side:
-        reject_reason = f"bbox_short_side_below_{threshold_label(min_short_side)}px"
-    elif ratio < min_area_ratio:
+    if ratio < min_area_ratio:
         reject_reason = (
             f"bbox_area_below_{threshold_label(min_area_ratio * 100)}_percent"
         )

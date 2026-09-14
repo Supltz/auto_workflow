@@ -3,10 +3,12 @@ Images: original image, target bbox overlay, tight crop, context crop, and a mon
 same-category distractors. The card gives the fixed target, category, support, caption
 reference, and IDs. Do not select another box or generate additional categories/queries.
 
-Accept only a real, complete, clear, independently referable target of the supplied
+Accept only a real, complete, identifiable, independently referable target of the supplied
 category with enough distinctive visible detail for a unique fine-grained expression.
-Reject arbitrary body parts, textures, scenery, severe occlusion/truncation and unclear
-objects. Small standalone accessories/signs/tools are allowed when the entire item is
+Blur or distance alone is not a rejection reason. Use only discernible evidence and
+do not invent fine details. Reject arbitrary body parts, textures, scenery, severe
+occlusion/truncation, and targets whose identity or extent cannot be established.
+Small standalone accessories/signs/tools are allowed when the entire item is
 visible. Caption absence is never a rejection reason. Compare ALL distractors.
 
 On acceptance return a proposal describing this fixed instance, using the supplied

@@ -169,7 +169,6 @@ def main() -> None:
             "max_area_ratio_between_boxes": 3.0,
             "within_grounder_dedup_iou": 0.95,
             "instance_dedup_iou": 0.85,
-            "min_short_side_px": 32,
             "min_area_ratio": 0.00001,
             "preferred_min_area_ratio": 0.001,
             "preferred_max_area_ratio": 0.10,
