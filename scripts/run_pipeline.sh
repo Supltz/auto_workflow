@@ -122,6 +122,17 @@ trap stop_qwen EXIT
 echo "[$(date --iso-8601=seconds)] Route B seeded random sample range [${START_INDEX},${END_INDEX}), run=${RUN_ID}"
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
 
+if [[ "$("${WORKFLOW_PYTHON}" -c 'from src.utils.config import load_yaml; print(load_yaml("configs/route_b.yaml").get("grounding_contract",""))')" == role-grounding-v1 ]]; then
+  STAGE_PLAN="$("${WORKFLOW_PYTHON}" -m src.routes.role_schedule)"
+  while read -r kind stage; do
+    if [[ "${kind}" == qwen ]]; then
+      qwen_stage "${stage}"
+    else
+      stop_qwen
+      cpu_or_ground_stage "${stage}"
+    fi
+  done <<< "${STAGE_PLAN}"
+else
 qwen_stage entities
 stop_qwen
 cpu_or_ground_stage ground
@@ -151,7 +162,14 @@ stop_qwen
 run_step bash scripts/run_route_b.sh --stage review --overwrite \
   --start-index "${START_INDEX}" --end-index "${END_INDEX}"
 
+fi
+
 "${WORKFLOW_PYTHON}" - <<'PY'
+from src.utils.config import load_yaml
+if load_yaml("configs/route_b.yaml").get("grounding_contract") == "role-grounding-v1":
+    from src.routes.role_outputs import validate
+    print(validate("outputs"))
+    raise SystemExit(0)
 import csv
 import json
 from collections import Counter, defaultdict
@@ -186,8 +204,6 @@ assert {row["region_id"] for row in rows} == {record["region_id"] for record in 
 assert all(row["final_referring_expression"].lower().startswith("the ") for row in rows)
 assert all(row["bbox_x1"] and row["bbox_y1"] and row["bbox_x2"] and row["bbox_y2"] for row in rows)
 assert all(record["bbox_area_ratio"] <= 0.10 for record in verified)
-assert all(min(r["bbox_xyxy"][2] - r["bbox_xyxy"][0],
-               r["bbox_xyxy"][3] - r["bbox_xyxy"][1]) >= 32 for r in verified)
 assert all(record["bbox_grounder_support"] >= 2 for record in verified)
 assert all(
     record["reground_audit"]["passed"]

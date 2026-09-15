@@ -97,8 +97,11 @@ def run_phrase_worker(adapter: PhraseGrounder, args: argparse.Namespace) -> None
                     try:
                         artifact_started=time.perf_counter()
                         if args.save_crops or args.save_overlays:image=open_rgb(request.image_path)
-                        saved_count=0;records=[]
+                        saved_count=0;records=[];invalid_outputs=[]
                         for detection_index,detection in enumerate(detections):
+                            if detection.get("bbox_xyxy") is None:
+                                invalid_outputs.append(detection.get("metadata", {}))
+                                continue
                             box=clip_box(detection["bbox_xyxy"],request.image_width,request.image_height)
                             if not valid_box(box,request.image_width,request.image_height):continue
                             request_tag=hashlib.sha1(request.request_id.encode("utf-8")).hexdigest()[:10]
@@ -125,7 +128,7 @@ def run_phrase_worker(adapter: PhraseGrounder, args: argparse.Namespace) -> None
                         artifact_seconds=time.perf_counter()-artifact_started
                         commit_started=time.perf_counter();writer.append_many(records)
                         progress.append({"request_id":request.request_id,"image_id":request.image_id,
-                            "detections":saved_count,"context_signature":getattr(args,"context_signature","")})
+                            "detections":saved_count,"invalid_outputs":invalid_outputs,"context_signature":getattr(args,"context_signature","")})
                         commit_seconds=time.perf_counter()-commit_started;done.add(request.request_id);checkpoint_boundary()
                     except Exception as exc:
                         failure_writer(args.failures_file,image_id=request.image_id,route=request.route,

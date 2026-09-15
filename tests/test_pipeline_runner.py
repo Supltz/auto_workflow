@@ -24,6 +24,11 @@ class PipelineRunnerTests(unittest.TestCase):
         self.log = self.root / "calls"
         python = self.root / "bin" / "fake-python"
         python.write_text("""#!/usr/bin/env bash
+if [[ "$1" == "-c" ]]; then
+  if [[ "${ROLE_PIPELINE:-0}" == 1 ]]; then echo role-grounding-v1; fi
+  exit 0
+fi
+if [[ " $* " == *" src.routes.role_schedule "* ]]; then cat "$ROLE_STAGE_PLAN"; exit 0; fi
 if [[ " $* " == *" --check-only "* ]]; then
   if [[ "${CACHED_FINALIZE:-0}" == 1 && " $* " == *" --stage finalize "* ]]; then exit 0; fi
   exit 3
@@ -63,6 +68,15 @@ if [[ "${BLOCK_STAGE:-0}" == 1 ]]; then exec sleep 300; fi
             "refine_generate", "refine_reground", "refine_verify",
             "refine_generate", "refine_reground", "refine_verify",
             "finalize", "review", "acceptance"])
+
+    def test_role_stage_order_uses_new_contract(self):
+        from src.routes.role_schedule import stage_plan
+        stages=stage_plan();plan=self.root/'stage-plan.txt'
+        plan.write_text(''.join(kind+' '+name+'\n' for kind,name,_,_ in stages))
+        self.env.update(ROLE_PIPELINE='1',ROLE_STAGE_PLAN=str(plan))
+        process=self.run_process();_,errors=process.communicate(timeout=90)
+        self.assertEqual(process.returncode,0,errors)
+        self.assertEqual(self.log.read_text().splitlines(),[s[1] for s in stages]+['acceptance'])
 
     def test_cached_final_identity_still_materializes_outputs(self):
         self.env["CACHED_FINALIZE"] = "1"

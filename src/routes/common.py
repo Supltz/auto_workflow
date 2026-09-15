@@ -13,6 +13,7 @@ from src.utils.config import PROJECT_ROOT, resolve_path
 from src.utils.io import read_jsonl, rewrite_jsonl_atomic
 
 WORKER_MODULES = {
+    "egm": "src.grounding.egm",
     "rex": "src.grounding.rex",
     "sam31": "src.grounding.sam31",
     "groundingdino": "src.grounding.groundingdino",

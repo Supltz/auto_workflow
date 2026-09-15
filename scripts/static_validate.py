@@ -26,9 +26,8 @@ SOURCE_MODULES = [
     "src.models.region_ocr",
     "src.grounding.base",
     "src.grounding.cache",
-    "src.grounding.rex",
+    "src.grounding.egm",
     "src.grounding.sam31",
-    "src.grounding.groundingdino",
     "src.routes.common",
     "src.routes.route_b_caption",
     "src.routes.route_b_stages",
@@ -40,9 +39,8 @@ SOURCE_MODULES = [
 ]
 ENV_IMPORTS = {
     "qwen": ["vllm", "transformers"],
-    "rex": ["rex_omni", "transformers", "qwen_vl_utils"],
+    "egm": ["torch", "transformers.models.qwen3_vl"],
     "sam31": ["sam3"],
-    "groundingdino": ["torch", "groundingdino", "groundingdino._C"],
 }
 EXPECTED_DIRECT_HASHES = {
     "sam31": (
@@ -84,7 +82,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_job_arguments(parser, "configs/experiment.yaml")
     parser.add_argument("--strict-gated", action="store_true")
+    parser.add_argument("--env-import-timeout", type=int, default=120)
     args = parser.parse_args()
+    _check(args.env_import_timeout>0, "positive import timeout required")
     experiment = load_yaml(args.config)
     models = load_yaml("configs/models.yaml")
     route_config = load_yaml("configs/route_b.yaml")
@@ -108,6 +108,13 @@ def main() -> None:
             resolve_path(route_config[key]).is_file(),
             f"missing {key}: {route_config[key]}",
         )
+    if route_config.get('grounding_contract')=='role-grounding-v1':
+        from src.routes.role_schedule import stage_plan
+        _check(set(models)=={'qwen','sam31','egm'}, 'Unexpected active model set')
+        _check(route_config['grounders']==['sam31','egm'], 'Unexpected grounding roles')
+        for name in ('scene','object','identity','phrase','verify','adjudicate','ocr'):
+            _check(resolve_path('prompts/role_'+name+'.txt').is_file(), 'Missing role prompt')
+        report['checks']['stages']=[row[1] for row in stage_plan(route_config)]
     report["checks"]["route_configs"] = 1
 
     manifest = [
@@ -131,11 +138,11 @@ def main() -> None:
     report["checks"]["dataset_records"] = len(manifest)
 
     report["checks"]["qwen_weights"] = _weight_index(resolve_path(models["qwen"]["local_path"]))
-    report["checks"]["rex_weights"] = _weight_index(resolve_path(models["rex"]["local_path"]))
+    report["checks"]["egm_weights"] = _weight_index(resolve_path(models["egm"]["local_path"]))
     resources = json.loads(resolve_path("artifacts/resources.json").read_text(encoding="utf-8"))
     for resource_key, model_key in (
-        ("qwen38_27b", "qwen"),
-        ("rex_omni", "rex"),
+        ("qwen", "qwen"),
+        ("egm", "egm"),
         ("sam31", "sam31"),
     ):
         _check(
@@ -143,7 +150,7 @@ def main() -> None:
             == models[model_key]["revision"],
             f"{resource_key} revision record differs from models config",
         )
-    for model_key in ("qwen38_27b", "rex_omni"):
+    for model_key in ("qwen", "egm"):
         indexed = resources["indexed_weights"][model_key]
         _check(indexed["available"], f"{model_key} indexed weights are incomplete")
         _check(
@@ -160,7 +167,7 @@ def main() -> None:
         )
     report["checks"]["resource_hash_manifest"] = True
     direct_hashes = {}
-    for model_key in ("sam31", "groundingdino"):
+    for model_key in ("sam31",):
         path = resolve_path(models[model_key]["local_path"])
         _check(path.is_file(), f"missing {model_key} checkpoint")
         resource_key, expected_hash = EXPECTED_DIRECT_HASHES[model_key]
@@ -187,12 +194,13 @@ def main() -> None:
             environment_results[model_key] = {"ok": False, "message": f"missing {python}"}
             continue
         command = [str(python), "-c", ";".join(f"import {module}" for module in modules)]
+        print(f"[static] checking environment {model_key}", flush=True)
         completed = subprocess.run(
             command,
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=args.env_import_timeout,
             check=False,
         )
         environment_results[model_key] = {

@@ -7,38 +7,21 @@ import argparse
 import json
 from pathlib import Path
 
-from src.utils.config import resolve_path
+from src.utils.config import resolve_path, load_yaml
 from src.utils.io import atomic_write_json
 from src.utils.provenance import git_commit, sha256_file
 
-REPOSITORIES = {
-    "rex_omni": "third_party/Rex-Omni",
-    "sam3": "third_party/sam3",
-    "groundingdino": "third_party/GroundingDINO",
-}
-HUGGINGFACE_REVISIONS = {
-    "qwen38_27b": {
-        "repo_id": "Qwen/Qwen3.8-27B",
-        "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
-    },
-    "rex_omni": {
-        "repo_id": "IDEA-Research/Rex-Omni",
-        "revision": "0e5693d24657f6c0e091008dd6809bb1bd28988c",
-    },
-    "sam31": {
-        "repo_id": "facebook/sam3.1",
-        "revision": "daa63191845a41281374e725f4c9e51c7a824460",
-        "gated": "manual",
-    },
-}
-MODEL_FILES = {
-    "qwen_config": "models/qwen38_27b/config.json",
-    "qwen_index": "models/qwen38_27b/model.safetensors.index.json",
-    "rex_config": "models/rex_omni/config.json",
-    "rex_index": "models/rex_omni/model.safetensors.index.json",
-    "sam31_checkpoint": "models/sam3_1/sam3.1_multiplex.pt",
-    "groundingdino_checkpoint": "models/grounding_dino/groundingdino_swinb_cogcoor.pth",
-}
+MODELS = load_yaml("configs/models.yaml")
+REPOSITORIES = {name: value['repo_path'] for name, value in MODELS.items() if value.get('repo_path')}
+HUGGINGFACE_REVISIONS = {name: dict(repo_id=value['name'], revision=value['revision'])
+                        for name, value in MODELS.items() if value.get('revision')}
+MODEL_FILES = {}
+for name, value in MODELS.items():
+    path=resolve_path(value['local_path'])
+    if name=='sam31':MODEL_FILES[name+'_checkpoint']=str(path)
+    else:
+        MODEL_FILES[name+'_config']=str(path/'config.json')
+        MODEL_FILES[name+'_index']=str(path/'model.safetensors.index.json')
 
 
 def _indexed_shards(model_key: str, model_dir: Path) -> dict:
@@ -99,10 +82,8 @@ def main() -> None:
             "size_bytes": path.stat().st_size if path.is_file() else None,
             "sha256": sha256_file(path) if path.is_file() else None,
         }
-    indexed_weights = {
-        "qwen38_27b": _indexed_shards("qwen38_27b", resolve_path("models/qwen38_27b")),
-        "rex_omni": _indexed_shards("rex_omni", resolve_path("models/rex_omni")),
-    }
+    indexed_weights = {name: _indexed_shards(name, resolve_path(model['local_path']))
+                       for name, model in MODELS.items() if name in ('qwen','egm')}
     atomic_write_json(
         Path(args.output_dir) / "resources.json",
         {
@@ -112,7 +93,7 @@ def main() -> None:
             "indexed_weights": indexed_weights,
             "notes": {
                 "sam31_checkpoint": "Gated by Meta license and Hugging Face authorization.",
-                "rex_score": "Official Rex-Omni parser returns boxes without confidence scores.",
+                "egm_score": "Locator evidence has no detector confidence score.",
                 "indexed_weight_hashes": (
                     "Per-shard SHA-256 values are immutable Hugging Face LFS object etags "
                     "recorded by hf download at the pinned revision."

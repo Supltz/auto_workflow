@@ -125,17 +125,23 @@ def _optional_records(path: Path, selected_ids: set[str]) -> list[dict[str, Any]
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_job_arguments(parser, "configs/route_b.yaml")
-    parser.add_argument("--stage", choices=STAGES, default="all")
+    parser.add_argument("--stage", default="all")
     parser.add_argument("--check-only", action="store_true",
                         help="Read-only Qwen-stage completion probe; exit 3 means pending")
+    parser.add_argument("--stage-step", type=int, default=None)
     args = parser.parse_args()
+    config = load_yaml(args.config)
+    if config.get("grounding_contract") == "role-grounding-v1":
+        from src.routes.role_pipeline import run
+        return run(args, config)
+    if args.stage not in STAGES:
+        parser.error("unknown legacy stage")
     if args.check_only and args.stage not in {
         "entities", "align", "promote", "bbox_verify", "ocr", "describe",
         "expression_verify", "refine_generate", "refine_verify", "finalize",
     }:
-        parser.error("--check-only is supported only for Qwen stages")
+        parser.error("--check-only is supported only for legacy Qwen stages")
     CHECK_ONLY.set(args.check_only)
-    config = load_yaml(args.config)
     models_config = load_yaml(config["models_config"])
     qwen_config = models_config["qwen"]
     experiment = load_yaml("configs/experiment.yaml")

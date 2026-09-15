@@ -1,0 +1,3 @@
+Read text visibly on the specified target A only, using its crop and full-image context.
+Exclude text belonging to neighbors. Do not guess blurry or distant characters. An empty
+list is valid. Return JSON: {"verified_target_text":[]}

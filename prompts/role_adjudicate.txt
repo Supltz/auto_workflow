@@ -1,0 +1,15 @@
+Targeted A-vs-B SEMANTIC ADJUDICATION, not model voting. A is the frozen intended target;
+B is where EGM localized the phrase. Neither designation proves correctness. Inspect
+original image, A/B overlay, both crops when present, and other visible same-category
+objects. Does the phrase truthfully describe A? Does it also describe B or anyone else?
+Is B actually a better semantic match? Separate SAME-OBJECT boundary differences from
+wrong-object identity. If A and B are the same physical object, do not count B as a
+competing target: also_matches_B=false, and explain the extent disagreement.
+When B is absent, do not invent it; assess A and the other visible alternatives directly.
+Explicitly justify supports_A using visible facts that rule out alternatives. An earlier
+Qwen approval, EGM confidence or SAM agreement is not proof. If multiple targets satisfy
+it, return ambiguous and a visible discriminator if one exists. If it doesn't describe A,
+return not_A. If evidence is insufficient, return uncertain. Do not generate replacement
+coordinates or change target identity. Short spatial phrases are legitimate if unique in
+the full image. Return JSON:
+{"outcome":"supports_A","describes_A":true,"facts_visible":true,"single_whole_target":true,"grammatical":true,"unique_in_full_image":true,"also_matches_B":false,"competing_object_ids":[],"discriminator":null,"evidence":["A-specific fact and comparison"],"reason":"explicit A-vs-B assessment"}

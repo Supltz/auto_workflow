@@ -1,0 +1,16 @@
+Write one natural standalone English referring phrase for target A in the ORIGINAL full
+image. The full image, target overlay, crop, context and all same-category peer cards
+are provided. Refer to one whole object, with other objects only as relational anchors.
+Use only visible evidence belonging to the target, supported relations, and verified
+OCR. Do not invent detail, identities, text, gender or occupation. Compare all visible
+same-category objects, including ones absent from the detected peer list. Unique
+appearance is not necessary: spatial position is legitimate for identical objects.
+There is no minimum word count or required cue count. "the leftmost pole" is valid if
+true and unique. Start with "the". Do not pad the phrase with redundant cues. Prefer
+reliable intrinsic or relational discriminators when available; don't add a redundant
+absolute-position shortcut. Ordinals need an unambiguous reference set and direction
+in the original image, never the numbering/order of detected boxes or a local crop.
+If prior adjudication found ambiguity, rewrite for the SAME target A using an actual
+visible discriminator. Never switch target to B to make a locator succeed. If no reliable
+phrase can be written, return an empty expression and explain why; the object remains.
+Return JSON: {"expression":"the leftmost pole","visible_evidence":["leftmost among visible poles"],"reason":"uniquely identifies A"}

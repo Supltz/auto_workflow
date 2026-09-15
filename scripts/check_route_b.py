@@ -69,6 +69,14 @@ def _raw(
 
 
 def main() -> None:
+    from src.utils.config import load_yaml, PROJECT_ROOT
+    if load_yaml('configs/route_b.yaml').get('grounding_contract')=='role-grounding-v1':
+        import unittest
+        suite=unittest.defaultTestLoader.discover(str(PROJECT_ROOT/'tests'),pattern='test_role_grounding.py')
+        result=unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful():raise SystemExit(1)
+        print('Role grounding acceptance checks: PASS')
+        return
     locator = "the person in the brown striped shirt climbing the wooden ramp"
     entities = CaptionEntitySet.model_validate(
         {

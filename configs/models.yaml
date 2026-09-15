@@ -13,15 +13,17 @@ qwen:
   max_attempts: 3
   request_timeout_seconds: 600
   env_python: envs/qwen/bin/python
-rex:
-  name: IDEA-Research/Rex-Omni
-  revision: 0e5693d24657f6c0e091008dd6809bb1bd28988c
-  local_path: models/rex_omni
-  repo_path: third_party/Rex-Omni
+egm:
+  name: nvidia/EGM-8B
+  revision: f5bc2e9d12386875c827b10ec7fe396e8215d6d6
+  local_path: models/egm_8b
   dtype: bfloat16
   attn_implementation: sdpa
-  max_output_tokens: 256
-  env_python: envs/rex/bin/python
+  max_output_tokens: 4096
+  max_pixels: 1048576
+  prompt: "Locate {phrase}, output its bbox coordinates using JSON format"
+  # Transformers Qwen3VL is available in the existing Qwen environment.
+  env_python: envs/qwen/bin/python
 sam31:
   name: facebook/sam3.1
   revision: daa63191845a41281374e725f4c9e51c7a824460
@@ -33,12 +35,3 @@ sam31:
   use_flash_attention_3: false
   use_rope_real: false
   env_python: envs/sam3/bin/python
-groundingdino:
-  name: GroundingDINO-SwinB
-  local_path: models/grounding_dino/groundingdino_swinb_cogcoor.pth
-  repo_path: third_party/GroundingDINO
-  model_config: groundingdino/config/GroundingDINO_SwinB_cfg.py
-  box_threshold: 0.25
-  text_threshold: 0.20
-  dtype: float32
-  env_python: envs/groundingdino/bin/python

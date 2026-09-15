@@ -20,7 +20,7 @@ import urllib.request
 import zlib
 
 MAX_BODY = 128 << 20
-NAMES = {"rex": "rex_omni", "sam31": "sam31", "groundingdino": "groundingdino"}
+NAMES = {"egm": "egm", "rex": "rex_omni", "sam31": "sam31", "groundingdino": "groundingdino"}
 
 
 def fingerprint(config):
@@ -258,7 +258,7 @@ def serve(spec_path):
             time.sleep(0.5)
         os._exit(75)
     threading.Thread(target=watchdog, daemon=True).start()
-    factories = {"rex": ("rex", "RexGrounder"), "sam31": ("sam31", "Sam31Grounder"),
+    factories = {"egm": ("egm", "EGMGrounder"), "rex": ("rex", "RexGrounder"), "sam31": ("sam31", "Sam31Grounder"),
                  "groundingdino": ("groundingdino", "GroundingDinoGrounder")}
     memory_preflight(spec["config"])
     module, name = factories[spec["model"]]

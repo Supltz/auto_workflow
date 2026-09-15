@@ -1,0 +1,33 @@
+Verify the proposed AXIS-ALIGNED RECTANGULAR bounding box A for one object of the supplied
+category. Follow the image_order card: image 1 is original, image 2 is the overlay,
+image 3 contains EXACTLY the pixels inside A, image 4 gives additional context.
+The category/locator is a hypothesis; finding it elsewhere in the original does not
+validate A. Use the original and context to identify the actual contents of this box.
+
+Apply ordinary visual-grounding box tolerance, not pixel-perfect segmentation:
+- A good tight box normally TOUCHES the object at its top/bottom/left/right extrema.
+  Touching a crop border does NOT mean truncation. Reject missing extent only when
+  the original or context visibly shows a SUBSTANTIAL part of this same object
+  continuing beyond that boundary. Do not invent a missing rim, cap button or handle.
+- A rectangle around a curved, tilted or held object inevitably includes some
+  background or fingers. This is normal, not a multiple-object annotation. The
+  target must be one object; every pixel inside the rectangle need not belong to it.
+  A held or worn item (a cup, microphone or cap) remains an independent object;
+  independent_object does not mean physically isolated from every other object.
+- Minor boundary errors, a few pixels of margin, slight occlusion by a holding hand,
+  blur, distance and identical appearance are allowed. Do not demand fine detail,
+  readable text, a distinctive appearance or a unique phrase to retain an object.
+- Reject a clearly wrong location, a box enclosing mainly unrelated background,
+  an unrelated collection of objects, or a substantial omitted visible part.
+  Severe ORIGINAL-image occlusion/truncation can be rejected; minor contact/occlusion
+  cannot. Never extend the target to hidden amodal extent or propose new coordinates.
+
+Give boundary_evidence for the four sides, distinguishing actual visible continuation
+outside A from a normal tight-box contact. Record only MATERIAL demonstrated defects
+in box_issues; use [] when remaining differences fall within the tolerance above.
+Then fill the booleans consistently. tight_and_complete and whole_object mean a
+reasonable whole-object visible bounding box under this tolerance, not perfection.
+Category is object kind, not material: a pitcher and eyeglasses are not drinking glasses.
+Keep uncertain attributes separate. Return the supplied JSON schema, supported by
+concrete observations of the box contents. Do not simply approve because an object
+of that category exists elsewhere, or reject because an object touches a crop edge.

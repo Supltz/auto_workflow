@@ -1,0 +1,11 @@
+Verify the proposed phrase for target A against the ORIGINAL full image and other
+same-category objects. Assess the entire phrase: every property must be visible and
+belong to its correct owner; anchors are relations, not additional targets. Require one
+whole target, natural grammar and unique full-image reference. Short phrases and spatial
+position are allowed. Do not infer uniqueness from the detector list or a single EGM
+output. Check image context for other matching instances. Ordinals refer to the visible
+scene, not detection numbering. Return supports_A only when the phrase uniquely and
+factually describes A with concrete visible evidence; ambiguous if multiple objects fit,
+not_A if the phrase describes another object or false facts, uncertain if evidence does
+not resolve it. In normal verification there is no B; also_matches_B must then be false.
+Return JSON: {"outcome":"supports_A","describes_A":true,"facts_visible":true,"single_whole_target":true,"grammatical":true,"unique_in_full_image":true,"also_matches_B":false,"competing_object_ids":[],"discriminator":null,"evidence":["visible distinguishing fact"],"reason":"why A is uniquely identified"}

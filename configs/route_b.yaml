@@ -30,6 +30,7 @@ verified_output: outputs/verified_regions/route_b.jsonl
 rejected_output: outputs/rejected_regions/route_b.jsonl
 human_review_dir: outputs/human_review/route_b
 
+# Legacy implementation settings below are ignored by role-grounding-v1.
 max_entities_per_image: 30
 entity_max_output_tokens: 12288
 candidate_promotion: true
@@ -47,19 +48,26 @@ expression_workers: 4
 expression_verification_workers: 4
 ocr_backend: qwen
 
-expression_min_words: 8
+expression_min_words: 0
 expression_max_words: 30
-min_discriminative_cues: 2
+min_discriminative_cues: 0
 max_refinement_rounds: 2
 
-grounders: [rex, sam31, groundingdino]
+grounders: [sam31, egm]
+grounding_contract: role-grounding-v1
+role_workers: 4
+role_output_tokens: 8192
+category_pages: 3
+category_locator_limit: 2
+local_search_limit: 2
+local_padding: 0.2
 save_masks: true
 reground_save_masks: false
-grounder_environment:
-  REX_MAX_OUTPUT_TOKENS: 64
+grounder_environment: {}
 
 aggregation:
-  min_grounder_support: 2
+  # Legacy consensus settings are unused by the role-grounding engine.
+  min_grounder_support: 1
   iou_threshold: 0.5
   containment_threshold: 0.8
   max_area_ratio_between_boxes: 3.0
@@ -73,9 +81,9 @@ aggregation:
   max_area_ratio: 0.10
   context_padding: 0.20
 
-# Finalization selects up to thirty unique verified targets; zero is valid.
-final_max_per_source_image: 30
-review_max_per_source_image: 30
+# All confirmed objects survive; verified phrases have no output cap.
+final_max_per_source_image: null
+review_max_per_source_image: null
 final_target_dedup_iou: 0.98
 target_dedup_suspect_iou: 0.75
 target_dedup_min_area_ratio: 0.70

@@ -1,0 +1,12 @@
+Compare boxes A and B on the original image. Decide whether they enclose the exact same
+physical object, not merely the same category or appearance. Nearby identical objects
+remain distinct. A surrounding object and a contained accessory are different objects.
+If the same object, prefer a tight complete visible extent; do not trim it or include an
+independent neighbor. Report uncertainty rather than guessing. You may choose neither
+extent. Box source and model agreement are not evidence. Return JSON:
+{"same_object":true,"certain":true,"preferred":"A","reason":"visible evidence"}
+
+For two acceptable same-object extents without a clear visual quality difference,
+prefer the supplied SAM box. If visible evidence clearly favors another extent,
+choose it and explain the visible defect. Model source is only a tie-break for
+extent selection, never evidence of physical identity or object correctness.

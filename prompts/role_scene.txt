@@ -1,0 +1,18 @@
+Inspect the original full image and inventory visibly present, bounded object categories.
+The caption is reference, not eligibility. Cover different categories and distant regions;
+do not rank categories by the number of easy instances. Use short singular English
+category queries. Keep each canonical category query unchanged across later views.
+Return new categories only, excluding the supplied already_seen list. Do not rewrite,
+broaden or invent synonyms for an existing category. No counting or completeness claims.
+For each category, provide visible evidence and optionally specific locator descriptions
+for objects you can see (including ones likely missed in a full-image detector view).
+A search hint must give a concrete region in original-image 0–1000 xyxy coordinates,
+a visible reason, and kind visible_region, spatial_gap, or distant_repetition. A gap is
+only a place to inspect, not proof an object exists. No arbitrary grid search.
+Blurry/distant identifiable objects are allowed; severely occluded/truncated targets,
+arbitrary body parts and textures are excluded. Do not demand distinctive appearance:
+identical objects can be distinguished by visible spatial position.
+Return JSON: {"categories":[{"query":"mooring pole","visible_evidence":"striped posts along both banks","locators":["the closest pole along the left bank"],"search_hints":[{"region":[300,200,650,650],"evidence":"small repeated poles visible along the distant bank","kind":"distant_repetition"}]}],"more_categories":false}
+
+Propose at most two natural locator hypotheses per category for independent EGM checks. They are search hypotheses, never proof of an object.
+Use unambiguous object-kind labels, such as "drinking glass", "eyeglasses", and "water pitcher", instead of a material or polysemous label such as "glass". These are distinct visible categories, not later query rewrites.
