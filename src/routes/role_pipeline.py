@@ -27,7 +27,7 @@ def implementation_fingerprint():
 def signature(config,models,row,code=None):
     # Logical batch paths and concurrency vary when images regroup across nodes.
     config={k:config.get(k) for k in ('grounding_contract','grounders','max_refinement_rounds',
-        'category_pages','category_locator_limit','local_search_limit','local_padding','aggregation','role_output_tokens')}
+        'phrase_review_version','phrase_context','category_pages','category_locator_limit','local_search_limit','local_padding','aggregation','role_output_tokens')}
     models=copy.deepcopy(models)
     models['qwen'].pop('api_base',None) # transport changes do not change inference semantics
     source=Path(row['image_path'])
@@ -38,6 +38,19 @@ def signature(config,models,row,code=None):
 
 
 def validate_config(config):
+    from src.routes.role_context import DEFAULTS,options,REVIEW_VERSION
+    import math
+    if type(config.get('phrase_review_version')) is not int or config['phrase_review_version']!=REVIEW_VERSION:
+        raise ValueError('phrase_review_version must be 2; old checkpoints require the old code')
+    context=config.get('phrase_context',{})
+    if not isinstance(context,dict) or set(context)-set(DEFAULTS):raise ValueError('Invalid phrase_context options')
+    values=options(config)
+    for name,low,high in [('local_scale',1,8),('min_image_fraction',.01,1),('group_padding',0,.5)]:
+        v=values[name]
+        if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or not low<=v<=high:
+            raise ValueError('Invalid phrase_context '+name)
+    for name,low,high in [('max_group_views',1,2),('peer_page_size',1,16),('nearest_peers',0,32)]:
+        if type(values[name]) is not int or not low<=values[name]<=high:raise ValueError('Invalid phrase_context '+name)
     for name,default,minimum in [('category_pages',3,1),('category_locator_limit',2,0),
                                 ('local_search_limit',2,0),('role_workers',4,1)]:
         value=config.get(name,default)
@@ -61,7 +74,7 @@ def run(args,config,backend_factory=Backend):
     if not set(stored).issubset(selected):raise ValueError('Role checkpoint contains unselected images; use a new run')
     for state in records:
         step=state.get('step')
-        if (state.get('contract')!=CONTRACT or isinstance(step,bool)
+        if (state.get('contract')!=CONTRACT or state.get('phrase_review_version')!=2 or isinstance(step,bool)
                 or not isinstance(step,int) or not 0<=step<=len(stages)):
             raise ValueError('Invalid role checkpoint contract or stage boundary')
     code=implementation_fingerprint()
@@ -76,7 +89,7 @@ def run(args,config,backend_factory=Backend):
         if args.check_only:
             if any(stored[i]['step']<step for i in selected):raise StagePending(stage)
             if action in ('finalize','review'):
-                try:role_outputs.validate(root,selected,require_review=action=='review')
+                try:role_outputs.validate(root,selected,require_review=action=='review',expected_review_version=2)
                 except (ValueError,FileNotFoundError,KeyError):raise StagePending(stage)
             return
         def worker(image_id):
@@ -94,9 +107,9 @@ def run(args,config,backend_factory=Backend):
             list(pool.map(worker,sorted(selected)))
         if action in ('finalize','review'):
             role_outputs.export([stored[i] for i in sorted(selected)],root)
-            role_outputs.validate(root,selected,require_review=False)
+            role_outputs.validate(root,selected,require_review=False,expected_review_version=2)
         if action=='review':
-            role_outputs.review(root);role_outputs.validate(root,selected)
+            role_outputs.review(root);role_outputs.validate(root,selected,expected_review_version=2)
     if args.stage=='all':
         for step in range(1,len(stages)+1):execute(step)
     else:

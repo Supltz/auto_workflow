@@ -5,11 +5,44 @@ import json
 from collections import Counter
 from pathlib import Path
 from src.routes.role_contract import CONTRACT
+from src.routes.role_context import REVIEW_VERSION, blind_gate
 from src.utils.io import read_jsonl,rewrite_jsonl_atomic,atomic_write_text
 from src.utils.images import open_rgb,save_referring_expression_overlay
 from src.utils.geometry import valid_box
 
 FILES=('objects/route_b.jsonl','unresolved_regions/route_b.jsonl','search_audit/route_b.jsonl')
+
+
+def compact_audit(obj,phrase):
+    blind=phrase.get('blind')
+    decisions=phrase.get('decisions',[])
+    return dict(version=REVIEW_VERSION,blind=blind,
+        context_regions=(obj.get('context') or {}).get('regions',[]),
+        locator_cue=phrase.get('locator_cue'),cue_type=phrase.get('cue_type'),
+        peer_ids=sorted({c['object_id'] for d in decisions for c in d['comparisons']}),
+        decisions=[{k:d[k] for k in ('outcome','target_kind_matches','locator_cue_valid',
+                     'reference_scope_clear','blind_target_relation','issue_type','comparisons',
+                     'describes_A','facts_visible','single_whole_target','grammatical',
+                     'unique_in_full_image','also_matches_B','competing_object_ids','evidence','reason')}
+                   for d in decisions])
+
+
+def validate_phrase_audit(row):
+    from src.routes.role_contract import phrase_verdict,BlindDecision
+    audit=row.get('phrase_audit') or {}
+    if audit.get('version')!=REVIEW_VERSION:raise ValueError('Missing independent phrase audit')
+    blind=BlindDecision.model_validate(audit.get('blind')).model_dump()
+    if blind_gate(blind):raise ValueError('Unresolved blind evidence cannot certify a phrase')
+    decisions=audit.get('decisions',[])
+    if not decisions or any(phrase_verdict(d)!='verified' for d in decisions):
+        raise ValueError('Unresolved competition or referent mismatch')
+    ids=[c['object_id'] for d in decisions for c in d['comparisons']]
+    if len(ids)!=len(set(ids)) or sorted(ids)!=audit.get('peer_ids'):raise ValueError('Invalid peer audit coverage')
+    cue=row.get('locator_cue')
+    if (not cue or cue.casefold() not in row['final_referring_expression'].casefold()
+            or row.get('cue_type') not in ('spatial','relation','attachment','action','appearance')
+            or cue!=audit.get('locator_cue') or row['cue_type']!=audit.get('cue_type')):
+        raise ValueError('Missing or inconsistent locating condition')
 
 
 def delivery(states):
@@ -21,16 +54,20 @@ def delivery(states):
             row=dict(contract=CONTRACT,image_id=state['image_id'],region_id=obj['id'],
                      source_image=state['source_image'],image_width=state['image_width'],image_height=state['image_height'],
                      bbox_xyxy=obj['bbox_xyxy'],category=obj['query'],box_source=obj['source'],
-                     box_version=obj['box_version'],object_verified=True,phrase_status=status)
+                     box_version=obj['box_version'],object_verified=True,phrase_status=status,
+                     phrase_review_version=state.get('phrase_review_version',1),referent=obj.get('referent'))
             objects.append(row)
             if status=='verified':
                 verified.append({**row,'status':'verified_unique_referring_expression',
                     'final_referring_expression':phrase['text'],'pass_via':phrase['pass_via'],
                     'reground_passed':phrase['reground']['passed'],
-                    'reground_iou':phrase['reground']['reground_iou']})
+                    'reground_iou':phrase['reground']['reground_iou'],
+                    'locator_cue':phrase.get('locator_cue'),'cue_type':phrase.get('cue_type'),
+                    'phrase_audit':compact_audit(obj,phrase)})
             else:
                 unresolved.append({**row,'phrase':phrase['text'] if phrase else None,
-                    'reason':(phrase['reason'] if phrase else 'no_phrase_before_search_drain_completed')[:1200]})
+                    'reason':(phrase['reason'] if phrase else 'no_phrase_before_search_drain_completed')[:1200],
+                    'phrase_audit':compact_audit(obj,phrase) if phrase else None})
         for c in state['categories']:
             search.append(dict(image_id=state['image_id'],category=c['query'],full_image_searches=int(c['full_done']),
                 local_searches=c['local_searches'],local_search_limit=state.get('local_search_limit',2),unprocessed_hints=sum(h['status']!='done' for h in c['hints']),
@@ -46,7 +83,7 @@ def delivery(states):
                       ('unresolved_regions/route_b.jsonl',unresolved),('search_audit/route_b.jsonl',search),
                       ('rejected_regions/route_b.jsonl',rejected),
                       ('verified_regions/route_b_counts_by_image.jsonl',
-                       [dict(image_id=s['image_id'],final_bbox_count=counts[s['image_id']],
+                       [dict(image_id=s['image_id'],phrase_review_version=s.get('phrase_review_version',1),final_bbox_count=counts[s['image_id']],
                              object_count=object_counts[s['image_id']],unresolved_count=unresolved_counts[s['image_id']])
                         for s in states])])
 
@@ -73,7 +110,7 @@ def review(root):
     atomic_write_text(directory/'index.csv',buffer.getvalue())
 
 
-def validate(root,selected=None,require_review=True):
+def validate(root,selected=None,require_review=True,expected_review_version=None):
     root=Path(root)
     required=(*FILES,'verified_regions/route_b.jsonl','verified_regions/route_b_counts_by_image.jsonl')
     for name in required:
@@ -104,6 +141,10 @@ def validate(root,selected=None,require_review=True):
 
     for obj in objects:
         if obj.get('contract')!=CONTRACT or not obj.get('object_verified'):raise ValueError('Unverified object')
+        if obj.get('phrase_review_version',1)==REVIEW_VERSION:
+            referent=obj.get('referent') or {}
+            if not referent.get('name') or referent.get('kind') not in ('physical_object','part','depiction','package'):
+                raise ValueError('Missing exact referent identity')
         if not valid_box(tuple(obj['bbox_xyxy']),obj['image_width'],obj['image_height']):raise ValueError('Invalid object box')
         if selected is not None and obj['image_id'] not in selected:raise ValueError('Foreign image')
         if not Path(obj['source_image']).is_absolute() or not Path(obj['source_image']).is_file():raise ValueError('Missing original image')
@@ -113,12 +154,18 @@ def validate(root,selected=None,require_review=True):
         obj=index[row['region_id']]
         if any(row.get(k)!=v for k,v in obj.items()):raise ValueError('Phrase switched object')
     for row in verified:
+        if row.get('phrase_review_version')==REVIEW_VERSION:validate_phrase_audit(row)
         if row['phrase_status']!='verified' or not row['final_referring_expression'].lower().startswith('the '):raise ValueError('Invalid verified phrase')
         if row['pass_via'] not in ('reground','semantic_adjudication'):raise ValueError('Missing acceptance evidence role')
         if row['pass_via']=='reground' and not row['reground_passed']:raise ValueError('Failed reground falsely passed')
     for row in unresolved:
         if row['phrase_status']!='unresolved':raise ValueError('Invalid unresolved status')
     counts=list(read_jsonl(root/'verified_regions/route_b_counts_by_image.jsonl'))
+    versions={r['image_id']:r.get('phrase_review_version',1) for r in counts}
+    if expected_review_version is not None and any(v!=expected_review_version for v in versions.values()):
+        raise ValueError('Expected phrase review version is missing or obsolete')
+    if any(o.get('phrase_review_version',1)!=versions.get(o['image_id']) for o in objects):
+        raise ValueError('Phrase review version mismatch')
     expected=Counter(r['image_id'] for r in verified)
     if selected is not None and {r['image_id'] for r in counts}!=set(selected):raise ValueError('Missing image results')
     if len({r['image_id'] for r in counts})!=len(counts):raise ValueError('Duplicate image count')
@@ -142,4 +189,5 @@ def validate(root,selected=None,require_review=True):
             if row['final_referring_expression']!=r['final_referring_expression'] or row['source_image']!=r['source_image']:raise ValueError('Review content mismatch')
             if [float(row['bbox_'+x]) for x in ('x1','y1','x2','y2')]!=r['bbox_xyxy']:raise ValueError('Review geometry mismatch')
             if not Path(row['review_file']).is_file():raise ValueError('Missing review image')
-    return dict(objects=len(objects),verified=len(verified),unresolved=len(unresolved),categories=len(search))
+    policy=({'phrase_review_version':REVIEW_VERSION} if versions and set(versions.values())=={REVIEW_VERSION} else {})
+    return dict(**policy,objects=len(objects),verified=len(verified),unresolved=len(unresolved),categories=len(search))

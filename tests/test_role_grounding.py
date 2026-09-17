@@ -18,14 +18,15 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def object_decision():
-    return dict(boundary_evidence=dict(top='top of pole',bottom='base of pole',left='left edge of pole',right='right edge of pole'),
+    return dict(referent_name='pole',referent_kind='physical_object',boundary_evidence=dict(top='top of pole',bottom='base of pole',left='left edge of pole',right='right edge of pole'),
                 box_issues=[],target_identifiable=True,category_correct=True,whole_object=True,
                 severe_occlusion_or_truncation=False,tight_and_complete=True,independent_object=True,
                 target_attributes=['red'],target_actions=[],supported_relations=[],uncertain_attributes=[],reason='visible')
 
 
 def phrase_decision(outcome='supports_A'):
-    return dict(outcome=outcome,describes_A=True,facts_visible=True,single_whole_target=True,
+    return dict(outcome=outcome,target_kind_matches=True,locator_cue_valid=True,reference_scope_clear=True,
+                blind_target_relation='same_object',comparisons=[],issue_type='none',describes_A=True,facts_visible=True,single_whole_target=True,
                 grammatical=True,unique_in_full_image=outcome=='supports_A',also_matches_B=False,
                 competing_object_ids=[],discriminator='position',evidence=['full image position'],reason=outcome)
 
@@ -40,10 +41,16 @@ class Fake:
         elif name=='object':v=object_decision()
         elif name=='identity':v=dict(same_object=False,certain=True,preferred='A',reason='distinct')
         elif name=='ocr':v=dict(verified_target_text=[])
-        elif name=='phrase':v=dict(expression='the pole at '+str(int(boxes[0][0])),visible_evidence=['position in original'],reason='unique position')
+        elif name=='context':v=dict(regions=[],comparison_scope='all poles in original image',reason='visible group')
+        elif name=='blind':
+            x=int(card['phrase'].rsplit(' ',1)[1])
+            v=dict(outcome='unique',matches=[dict(bbox_normalized=[x,10,x+10,40],referent='pole',evidence='full-image position')],
+                   requested_regions=[],comparison_scope='full image',reason='one match')
+        elif name=='phrase':v=dict(expression='the pole at '+str(int(boxes[0][0])),locator_cue='at '+str(int(boxes[0][0])),cue_type='spatial',visible_evidence=['position in original'],reason='unique position')
         else:
             outcome=('uncertain' if int(boxes[0][0])==10 else 'supports_A') if self.disagreement else 'supports_A'
             v=phrase_decision(outcome)
+            v['comparisons']=[dict(object_id=p['id'],also_matches=False,reason='different position') for p in card.get('peers',[])]
         return schema.model_validate(v).model_dump(), 'raw answer deliberately not archived'
     def ground(self,model,state,query,region=None):
         self.grounded.append((model,query,region))
@@ -116,7 +123,7 @@ class RoleTests(unittest.TestCase):
         engine,fake=self.run_engine(Fake(2));a,b=self.state['objects'];identity=[a['id'],b['id']]
         b['phrase']['text']=a['phrase']['text'];engine.verify_phrases()
         self.assertEqual([o['phrase']['status'] for o in (a,b)],['needs_rewrite','needs_rewrite'])
-        engine.stage('rewrite');engine.reground();engine.verify_phrases()
+        engine.stage('rewrite');engine.reground();engine.blind_review();engine.verify_phrases()
         self.assertEqual([o['phrase']['status'] for o in (a,b)],['verified','verified'])
         self.assertEqual([o['id'] for o in (a,b)],identity)
         self.assertEqual([o['phrase']['revision'] for o in (a,b)],[1,1])
@@ -134,7 +141,7 @@ class RoleTests(unittest.TestCase):
         plan=stage_plan(self.config);names=[r[1] for r in plan]
         self.assertEqual(len(names),len(set(names)));self.assertNotIn('aggregate',names);self.assertNotIn('promote',names)
         self.assertEqual(names,[name for _,group in phases(self.config) for name in group]);self.assertEqual(names[-1],'review_export')
-        self.assertEqual(len(stage_plan(dict(max_refinement_rounds=0))),15)
+        self.assertEqual(len(stage_plan(dict(max_refinement_rounds=0,phrase_review_version=2))),17)
     def test_cli_missing_final_export_can_be_rebuilt(self):
         from types import SimpleNamespace
         fake=Fake(1);output=self.root/'pipeline';manifest=self.root/'manifest.jsonl';manifest.write_text(json.dumps(self.row)+'\n')

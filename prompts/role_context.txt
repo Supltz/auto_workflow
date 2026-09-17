@@ -1,0 +1,10 @@
+Plan visual context for describing target A; do NOT write the phrase or judge uniqueness.
+A's exact crop is for identity only. Inspect the original image for its enclosing whole
+object, nearby confusing objects, and useful visible anchors. A target-centered small
+crop may omit members of the comparison set or the context needed to interpret a relation.
+Return up to TWO normalized original-image xyxy regions that reveal the relevant group
+and anchors, even if these have no detected boxes. Do not center every region on A.
+Prefer a readable group view over an almost-full-image duplicate. If the group is large,
+two overlapping views may be used; report their shared scope. Never assume detected
+peers exhaust the scene. Regions are viewing aids, NOT new boxes or comparison boundaries.
+Return JSON with regions:[{region:[x1,y1,x2,y2],reason:"..."}], comparison_scope, reason.

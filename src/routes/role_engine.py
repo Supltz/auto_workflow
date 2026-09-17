@@ -2,8 +2,9 @@
 from __future__ import annotations
 import copy
 from src.routes.role_contract import (CONTRACT, Scene, ObjectDecision, IdentityDecision, OCR,
-    Draft, PhraseDecision, key, normalized_region, crop_to_original, geometry_audit,
+    Draft, PhraseDecision, ContextPlan, BlindDecision, key, normalized_region, crop_to_original, geometry_audit,
     add_hint, reserve_search, phrase_verdict)
+from src.routes.role_context import REVIEW_VERSION, competitors, options, draft_valid, blind_gate
 from src.regions.consensus import size_assessment
 from src.utils.geometry import iou, containment, valid_box
 
@@ -11,7 +12,7 @@ from src.utils.geometry import iou, containment, valid_box
 def initial_state(row, signature):
     return dict(image_id=row['image_id'],source_image=row['image_path'],image_width=row['width'],
                 image_height=row['height'],caption=row.get('caption',''),signature=signature,
-                contract=CONTRACT,step=0,categories=[],candidates=[],objects=[],calls={},events=[])
+                contract=CONTRACT,phrase_review_version=REVIEW_VERSION,step=0,categories=[],candidates=[],objects=[],calls={},events=[])
 
 
 class Engine:
@@ -154,13 +155,14 @@ class Engine:
                 prefer_new=(identity['preferred']=='B')
                 if prefer_new:
                     duplicate.update(bbox_xyxy=box,source=candidate['source'],method=candidate['method'],
-                                     verification=decision,box_version=duplicate['box_version']+1)
+                                     verification=decision,referent=dict(name=decision['referent_name'],kind=decision['referent_kind']),box_version=duplicate['box_version']+1)
                     for cid in duplicate['category_ids']:self.category(cid)['peer_version']+=1
             else:
                 category=self.category(candidate['category_id'])
                 obj=dict(id='o_'+key([self.s['image_id'],candidate['id']]),query=category['query'],
                      category_id=category['id'],category_ids=[category['id']],bbox_xyxy=box,box_version=1,
                      source=candidate['source'],method=candidate['method'],verification=decision,
+                     referent=dict(name=decision['referent_name'],kind=decision['referent_kind']),
                      detections=[candidate['id']],phrase=None,history=[],ocr=None)
                 self.s['objects'].append(obj);category['peer_version']+=1
                 candidate.update(status='verified',object_id=obj['id'])
@@ -178,11 +180,21 @@ class Engine:
             hint['status']='done';self.save()
 
     def peers(self,obj):
-        return [dict(id=o['id'],category=o['query'],bbox=o['bbox_xyxy']) for o in self.s['objects']
-                if o['id']!=obj['id'] and set(o['category_ids']) & set(obj['category_ids'])]
+        return competitors(self.s,obj,self.config)
 
     def peer_key(self,obj):
-        return key([obj['box_version'],[(cid,self.category(cid)['peer_version']) for cid in obj['category_ids']]])
+        return key([obj['box_version'],obj.get('referent'),self.peers(obj)])
+
+    def context(self,obj):
+        version=self.peer_key(obj)
+        if obj.get('context_version')!=version:
+            # Planning sees A, but the resulting crops NEVER go to blind review.
+            card=dict(category=obj['query'],referent=obj['referent'],
+                      peers=self.peers(obj)[:options(self.config)['peer_page_size']],
+                      peers_are_not_exhaustive=True)
+            obj['context']=self.call('context',card,ContextPlan,[obj['bbox_xyxy']])
+            obj['context_version']=version;self.save()
+        return obj['context']
 
     def ocr(self):
         for obj in self.s['objects']:
@@ -197,19 +209,38 @@ class Engine:
                 if not rewrite or previous['status']!='needs_rewrite':continue
                 if previous['revision']>=int(self.config.get('max_refinement_rounds',2)):
                     previous.update(status='unresolved',reason='rewrite_budget_exhausted');self.save();continue
-            card=dict(category=obj['query'],target_evidence=obj['verification'],verified_ocr=obj['ocr'],
-                      same_category_peers=self.peers(obj)[:32],peers_are_not_exhaustive=True,
+            context=self.context(obj)
+            card=dict(category=obj['query'],referent=obj['referent'],target_evidence=obj['verification'],verified_ocr=obj['ocr'],
+                      context_regions=context['regions'],comparison_scope=context['comparison_scope'],
+                      same_category_peers=self.peers(obj)[:options(self.config)['peer_page_size']],peers_are_not_exhaustive=True,
                       original_target_box=obj['bbox_xyxy'],previous=(dict(text=previous['text'],
                           revision=previous['revision'],status=previous['status'],reason=previous['reason'][:1200],
-                          colliding_object_ids=previous.get('colliding_object_ids',[])) if previous else None))
+                          colliding_object_ids=previous.get('colliding_object_ids',[]),
+                          blind_observation=previous.get('blind'),
+                          comparisons=[c for d in previous.get('decisions',[]) for c in d.get('comparisons',[]) if c['also_matches'] is not False]) if previous else None))
             draft=self.call('phrase',card,Draft,[obj['bbox_xyxy']])
             text=' '.join(draft['expression'].split())
             if previous:obj['history'].append(previous)
             revision=0 if previous is None else previous['revision']+1
             obj['phrase']=dict(text=text,revision=revision,evidence=draft['visible_evidence'],
-                status='draft' if text.lower().startswith('the ') and draft['visible_evidence'] else 'unresolved',
+                locator_cue=draft['locator_cue'],cue_type=draft['cue_type'],blind=None,
+                status='draft' if draft_valid(draft) and draft['cue_type']!='none' else 'unresolved',
                 reason=draft['reason'],reground=None,verified_peers=None,box_version=obj['box_version'])
             self.save()
+
+    def blind_review(self):
+        for obj in self.s['objects']:
+            phrase=obj['phrase']
+            if (not phrase or not phrase['text'].lower().startswith('the ') or not phrase['evidence']
+                    or not phrase.get('locator_cue') or phrase.get('cue_type')=='none'):continue
+            if phrase.get('blind') is None:
+                # Only phrase and the reader's own observation cross this boundary.
+                first=self.call('blind',dict(phrase=phrase['text']),BlindDecision)
+                result=first
+                if first['requested_regions'] and first['outcome']!='multiple':
+                    result=self.call('blind',dict(phrase=phrase['text'],observation=first),BlindDecision)
+                phrase['blind']=result
+                phrase['blind_views']=first['requested_regions'];self.save()
 
     def reground(self,discover=True):
         for obj in self.s['objects']:
@@ -240,27 +271,44 @@ class Engine:
                 phrase['box_version']=obj['box_version'];phrase['verified_peers']=None
             peers_key=self.peer_key(obj)
             if phrase.get('verified_peers')==peers_key:continue
+            blind=phrase.get('blind')
+            if blind is None:
+                phrase.update(status='unresolved',reason='missing_independent_blind_review',pass_via=None);self.save();continue
+            context=self.context(obj)
             normal=phrase['reground']['passed']
             name='verify' if normal else 'adjudicate'
             boxes=[obj['bbox_xyxy']]
             predictions=[p['bbox_xyxy'] for p in phrase['reground']['predictions'] if p.get('bbox_xyxy')]
             if not normal and predictions:boxes.append(predictions[0])
             peers=self.peers(obj)
-            pages=[peers[i:i+32] for i in range(0,len(peers),32)] or [[]]
+            page_size=options(self.config)['peer_page_size']
+            pages=[peers[i:i+page_size] for i in range(0,len(peers),page_size)] or [[]]
             decisions=[]
             for page,items in enumerate(pages):
-                card=dict(target_A=obj['id'],category=obj['query'],phrase=phrase['text'],
+                card=dict(target_A=obj['id'],category=obj['query'],referent=obj['referent'],phrase=phrase['text'],
+                          locator_cue=phrase['locator_cue'],blind_observation=blind,
+                          context_regions=context['regions'],comparison_scope=context['comparison_scope'],
                           target_evidence=obj['verification'],B_present=len(boxes)>1,
                           other_locator_boxes=predictions[1:] if not normal else [],
                           peers=items,peer_page=page+1,peer_pages=len(pages),
                           inspect_full_image_for_unlisted_alternatives=True)
-                decisions.append(self.call(name,card,PhraseDecision,boxes))
+                decision=self.call(name,card,PhraseDecision,boxes)
+                expected={p['id'] for p in items};actual=[c['object_id'] for c in decision['comparisons']]
+                if set(actual)!=expected or len(actual)!=len(expected):
+                    decision.update(outcome='uncertain',unique_in_full_image=False,
+                                    reason='incomplete_or_foreign_peer_comparisons: '+decision['reason'])
+                decisions.append(decision)
             verdicts=[phrase_verdict(d) for d in decisions]
+            if blind_gate(blind):verdicts.append(blind_gate(blind))
+            if (not phrase.get('locator_cue') or phrase.get('cue_type')=='none'
+                    or phrase['locator_cue'].casefold() not in phrase['text'].casefold()):verdicts.append('unresolved')
             status=('needs_rewrite' if 'needs_rewrite' in verdicts else
                     'unresolved' if 'unresolved' in verdicts else 'verified')
-            phrase.update(status=status,verified_peers=peers_key,decisions=decisions,
+            conflicts=sorted({c['object_id'] for d in decisions for c in d['comparisons'] if c['also_matches'] is True}
+                             | {i for d in decisions for i in d['competing_object_ids']})
+            phrase.update(status=status,verified_peers=peers_key,decisions=decisions,colliding_object_ids=conflicts,
                           pass_via=('reground' if normal else 'semantic_adjudication') if status=='verified' else None,
-                          reason='; '.join(d['reason'] for d in decisions))
+                          reason=('blind_'+blind['outcome']+': '+blind['reason']+'; '+'; '.join(d['reason'] for d in decisions)))
             self.save()
         # A deterministic collision is ambiguity evidence even if separate
         # model reviews both said unique. Surface it before rewrite rounds.

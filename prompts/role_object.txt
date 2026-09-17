@@ -8,11 +8,11 @@ Apply ordinary visual-grounding box tolerance, not pixel-perfect segmentation:
 - A good tight box normally TOUCHES the object at its top/bottom/left/right extrema.
   Touching a crop border does NOT mean truncation. Reject missing extent only when
   the original or context visibly shows a SUBSTANTIAL part of this same object
-  continuing beyond that boundary. Do not invent a missing rim, cap button or handle.
+  continuing beyond that boundary. Do not invent missing components or hidden extent.
 - A rectangle around a curved, tilted or held object inevitably includes some
   background or fingers. This is normal, not a multiple-object annotation. The
   target must be one object; every pixel inside the rectangle need not belong to it.
-  A held or worn item (a cup, microphone or cap) remains an independent object;
+  A held or worn item remains an independent object;
   independent_object does not mean physically isolated from every other object.
 - Minor boundary errors, a few pixels of margin, slight occlusion by a holding hand,
   blur, distance and identical appearance are allowed. Do not demand fine detail,
@@ -27,7 +27,20 @@ outside A from a normal tight-box contact. Record only MATERIAL demonstrated def
 in box_issues; use [] when remaining differences fall within the tolerance above.
 Then fill the booleans consistently. tight_and_complete and whole_object mean a
 reasonable whole-object visible bounding box under this tolerance, not perfection.
-Category is object kind, not material: a pitcher and eyeglasses are not drinking glasses.
+Category denotes object kind rather than material; disambiguate polysemous labels
+using the visible contents instead of substituting a different object kind.
 Keep uncertain attributes separate. Return the supplied JSON schema, supported by
 concrete observations of the box contents. Do not simply approve because an object
 of that category exists elsewhere, or reject because an object touches a crop edge.
+
+Before approval, name the EXACT referent and its kind: physical_object, part, depiction,
+or package. Distinguish an entity from its representation, container and constituent
+parts. Broad detector categories are hypotheses; refine the referent_name to match the
+proposed extent. Explicit parts or depictions are allowed if visually separable; do not
+reject them merely because they belong to another object. Check extent against this
+exact referent. Reject contradictory category/extent or unsupported hidden extent.
+
+For independent_object and whole-object checks, a clearly bounded depicted object or
+visible part may be an independent annotation unit. Use referent_kind and referent_name
+to specify that unit explicitly; never substitute its container, parent or component.
+This does not require seeing hidden portions of a legitimately occluded object.

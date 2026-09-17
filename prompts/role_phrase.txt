@@ -1,16 +1,30 @@
 Write one natural standalone English referring phrase for target A in the ORIGINAL full
-image. The full image, target overlay, crop, context and all same-category peer cards
-are provided. Refer to one whole object, with other objects only as relational anchors.
+image. The full image, target overlay, crop, context and retrieved peer cards
+are provided; the peer list is not exhaustive. Refer to one exact referent at the verified granularity, with other objects only as relational anchors.
 Use only visible evidence belonging to the target, supported relations, and verified
 OCR. Do not invent detail, identities, text, gender or occupation. Compare all visible
 same-category objects, including ones absent from the detected peer list. Unique
 appearance is not necessary: spatial position is legitimate for identical objects.
-There is no minimum word count or required cue count. "the leftmost pole" is valid if
-true and unique. Start with "the". Do not pad the phrase with redundant cues. Prefer
-reliable intrinsic or relational discriminators when available; don't add a redundant
-absolute-position shortcut. Ordinals need an unambiguous reference set and direction
+There is no minimum word count; at least one effective locating condition is required.
+A short spatial condition is sufficient when factually supported and unique. Start with "the". Do not pad the phrase with redundant cues. Prefer reliable scene relations, attachment or position when available, even if the
+object is already unique. Do not invent a relation or add filler. Ordinals need an unambiguous reference set and direction
 in the original image, never the numbering/order of detected boxes or a local crop.
 If prior adjudication found ambiguity, rewrite for the SAME target A using an actual
 visible discriminator. Never switch target to B to make a locator succeed. If no reliable
 phrase can be written, return an empty expression and explain why; the object remains.
-Return JSON: {"expression":"the leftmost pole","visible_evidence":["leftmost among visible poles"],"reason":"uniquely identifies A"}
+Return the required JSON schema with expression, locator_cue, cue_type, visible_evidence, reason.
+
+The phrase will later be converted into a question, but DO NOT generate a question now.
+Include at least ONE true, effective locating condition; record its exact substring as
+locator_cue and its cue_type (spatial/relation/attachment/action/appearance). Prefer a
+natural scene relation/attachment/location even when the object is the only one of its
+kind. Do not stop at only a name, OCR label or material when clear scene context is
+available. This locating
+condition must be useful independently of a property/OCR value someone may later ask
+about. No minimum length or two-cue rule; no invented anchor or padded adjective.
+Use the supplied exact referent_name/kind: the entity type and level of part/whole description must not
+change. Choose conditions that exclude confusing objects shown in context. Group crops
+are magnifications, not restrictions on the full-image reference set. If previous review
+names a competitor, explicitly repair the failed distinction rather than adding synonyms.
+Add locator_cue and cue_type to the required JSON. If no reliable condition exists,
+return an empty expression, locator_cue:'', cue_type:'none'; retain the object.

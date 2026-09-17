@@ -11,5 +11,22 @@ Qwen approval, EGM confidence or SAM agreement is not proof. If multiple targets
 it, return ambiguous and a visible discriminator if one exists. If it doesn't describe A,
 return not_A. If evidence is insufficient, return uncertain. Do not generate replacement
 coordinates or change target identity. Short spatial phrases are legitimate if unique in
-the full image. Return JSON:
-{"outcome":"supports_A","describes_A":true,"facts_visible":true,"single_whole_target":true,"grammatical":true,"unique_in_full_image":true,"also_matches_B":false,"competing_object_ids":[],"discriminator":null,"evidence":["A-specific fact and comparison"],"reason":"explicit A-vs-B assessment"}
+the full image.
+
+The independent blind observation was made WITHOUT target A. Compare its referents with
+A; blind_target_relation is same_object only when the UNIQUE blind match is demonstrably
+this physical referent. Boundary differences alone need not mean a different object.
+Do not override a multiple/uncertain/none blind result by saying A looks plausible.
+Compare EVERY provided peer, returning exactly one comparisons entry per peer ID:
+object_id, also_matches (true/false/null if uncertain), and a concrete visible reason.
+These are retrieval candidates, not an exhaustive inventory. False requires an actual
+mismatch with the phrase, NOT merely 'not target A'. If another object fits, report
+ambiguous; if comparison is unresolved, report uncertain. Different synonym wording
+does not establish uniqueness. Incomplete detections cannot establish a spatial extremum or ordinal.
+Verify target_kind_matches against the exact referent_name/kind. Do not substitute an
+entity for its depiction, containing object, enclosing whole or constituent part.
+Verify locator_cue_valid and reference_scope_clear. Do not strengthen a broad spatial
+relation into adjacency, or narrow the comparison scope to the displayed crop. Identify issue_type
+(none/ambiguity/false_attribute/scope/granularity/boundary/uncertain). For failure provide
+a concrete discriminator when visible; otherwise null. No unsupported repairs.
+Return JSON conforming to the supplied Required schema, including all comparison and blind-identity fields.

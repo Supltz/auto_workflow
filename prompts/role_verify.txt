@@ -1,11 +1,28 @@
 Verify the proposed phrase for target A against the ORIGINAL full image and other
 same-category objects. Assess the entire phrase: every property must be visible and
 belong to its correct owner; anchors are relations, not additional targets. Require one
-whole target, natural grammar and unique full-image reference. Short phrases and spatial
+exact target at its verified referent granularity, natural grammar and unique full-image reference. Short phrases and spatial
 position are allowed. Do not infer uniqueness from the detector list or a single EGM
 output. Check image context for other matching instances. Ordinals refer to the visible
 scene, not detection numbering. Return supports_A only when the phrase uniquely and
 factually describes A with concrete visible evidence; ambiguous if multiple objects fit,
 not_A if the phrase describes another object or false facts, uncertain if evidence does
 not resolve it. In normal verification there is no B; also_matches_B must then be false.
-Return JSON: {"outcome":"supports_A","describes_A":true,"facts_visible":true,"single_whole_target":true,"grammatical":true,"unique_in_full_image":true,"also_matches_B":false,"competing_object_ids":[],"discriminator":null,"evidence":["visible distinguishing fact"],"reason":"why A is uniquely identified"}
+
+The independent blind observation was made WITHOUT target A. Compare its referents with
+A; blind_target_relation is same_object only when the UNIQUE blind match is demonstrably
+this physical referent. Boundary differences alone need not mean a different object.
+Do not override a multiple/uncertain/none blind result by saying A looks plausible.
+Compare EVERY provided peer, returning exactly one comparisons entry per peer ID:
+object_id, also_matches (true/false/null if uncertain), and a concrete visible reason.
+These are retrieval candidates, not an exhaustive inventory. False requires an actual
+mismatch with the phrase, NOT merely 'not target A'. If another object fits, report
+ambiguous; if comparison is unresolved, report uncertain. Different synonym wording
+does not establish uniqueness. Incomplete detections cannot establish a spatial extremum or ordinal.
+Verify target_kind_matches against the exact referent_name/kind. Do not substitute an
+entity for its depiction, containing object, enclosing whole or constituent part.
+Verify locator_cue_valid and reference_scope_clear. Do not strengthen a broad spatial
+relation into adjacency, or narrow the comparison scope to the displayed crop. Identify issue_type
+(none/ambiguity/false_attribute/scope/granularity/boundary/uncertain). For failure provide
+a concrete discriminator when visible; otherwise null. No unsupported repairs.
+Return JSON conforming to the supplied Required schema, including all comparison and blind-identity fields.

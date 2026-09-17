@@ -1,8 +1,10 @@
 # SAM3.1 + EGM grounding 重构设计
 
-更新日期：2026-09-15。本文记录已确认设计和实施约定；实际部署状态以服务器 `.local/role-grounding-deployment.json` 回执为准。允许可辨认的模糊／远景目标，取消短边 32 px 门槛。
+更新日期：2026-09-16。本文记录已确认设计和实施约定；实际部署状态以服务器 `.local/role-grounding-deployment.json` 回执为准。允许可辨认的模糊／远景目标，取消短边 32 px 门槛。
 
 依据：本任务中的明确选择，以及已读取的关联聊天[取消输出截断](chatgpt-conversation://6aa8055c-e030-83eb-84c0-a1ce40e6f6f3)。关联聊天中的建议作为背景，不自动作为决定；冲突处采用用户本次明确反馈：第一版采用 Level 2 targeted local search，同时保持固定类别预算，不采用 adaptive budget。
+
+> 当前 phrase/context 策略已更新为 [v2](PHRASE_CONTEXT_V2.md)：独立盲审、对象群视野、具体竞争证据和至少一个有效定位条件。默认 29 stages；下文原版 25-stage 记录为历史说明。2026-09-16 本次用户明确要求仅做登录节点 CPU 测试，未进行 GPU 验收。
 
 ## 1. 目标与范围
 

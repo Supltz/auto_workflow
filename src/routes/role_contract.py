@@ -4,7 +4,7 @@ import hashlib
 import json
 import math
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.utils.geometry import iou, area, valid_box
 
 from src.routes.role_schedule import CONTRACT, stage_plan
@@ -46,6 +46,8 @@ class BoundaryEvidence(Strict):
 
 
 class ObjectDecision(Strict):
+    referent_name: str = Field(min_length=1)
+    referent_kind: Literal["physical_object", "part", "depiction", "package"]
     boundary_evidence: BoundaryEvidence
     box_issues: list[str]
     target_identifiable: bool
@@ -79,12 +81,69 @@ class OCR(Strict):
 
 class Draft(Strict):
     expression: str
+    locator_cue: str
+    cue_type: Literal["spatial", "relation", "attachment", "action", "appearance", "none"]
     visible_evidence: list[str]
     reason: str
 
 
+class ViewRegion(Strict):
+    region: list[float] = Field(min_length=4, max_length=4)
+    reason: str = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_region(self):
+        if any(not math.isfinite(v) for v in self.region) or not 0<=self.region[0]<self.region[2]<=1000 or not 0<=self.region[1]<self.region[3]<=1000:
+            raise ValueError('Region must be normalized xyxy in 0..1000')
+        return self
+
+
+class ContextPlan(Strict):
+    regions: list[ViewRegion] = Field(max_length=2)
+    comparison_scope: str = Field(min_length=1)
+    reason: str
+
+
+class BlindMatch(Strict):
+    bbox_normalized: list[float] = Field(min_length=4, max_length=4)
+    referent: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def valid_region(self):
+        ViewRegion(region=self.bbox_normalized,reason=self.evidence)
+        return self
+
+
+class BlindDecision(Strict):
+    outcome: Literal['unique','multiple','none','uncertain']
+    matches: list[BlindMatch] = Field(max_length=16)
+    requested_regions: list[ViewRegion] = Field(max_length=2)
+    comparison_scope: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def cardinality(self):
+        if self.outcome=='unique' and len(self.matches)!=1:raise ValueError('Unique requires one match')
+        if self.outcome=='multiple' and len(self.matches)<2:raise ValueError('Multiple requires two witnesses')
+        if self.outcome=='none' and self.matches:raise ValueError('None cannot include matches')
+        return self
+
+
+class Comparison(Strict):
+    object_id: str
+    also_matches: bool | None
+    reason: str = Field(min_length=1)
+
+
 class PhraseDecision(Strict):
     outcome: Literal['supports_A','ambiguous','not_A','uncertain']
+    target_kind_matches: bool
+    locator_cue_valid: bool
+    reference_scope_clear: bool
+    blind_target_relation: Literal["same_object", "different_object", "uncertain"]
+    comparisons: list[Comparison]
+    issue_type: Literal["none", "ambiguity", "false_attribute", "scope", "granularity", "boundary", "uncertain"]
     describes_A: bool
     facts_visible: bool
     single_whole_target: bool
@@ -103,9 +162,14 @@ def phrase_verdict(decision):
                 and decision['facts_visible'] and decision['single_whole_target']
                 and decision['grammatical'] and decision['unique_in_full_image']
                 and not decision['also_matches_B'] and not decision['competing_object_ids']
-                and bool(decision['evidence']))
+                and bool(decision['evidence']) and decision['target_kind_matches']
+                and decision['locator_cue_valid'] and decision['reference_scope_clear']
+                and decision['blind_target_relation']=='same_object'
+                and decision['issue_type'] in ('none','boundary')
+                and all(c['also_matches'] is False for c in decision['comparisons']))
     if supports: return 'verified'
-    if decision['outcome'] in ('ambiguous','not_A'): return 'needs_rewrite'
+    if (decision['outcome'] in ('ambiguous','not_A') or decision['issue_type'] in ('ambiguity','false_attribute','scope','granularity')
+            or any(c['also_matches'] is True for c in decision['comparisons'])): return 'needs_rewrite'
     return 'unresolved'
 
 

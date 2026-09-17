@@ -3,8 +3,8 @@ physical object, not merely the same category or appearance. Nearby identical ob
 remain distinct. A surrounding object and a contained accessory are different objects.
 If the same object, prefer a tight complete visible extent; do not trim it or include an
 independent neighbor. Report uncertainty rather than guessing. You may choose neither
-extent. Box source and model agreement are not evidence. Return JSON:
-{"same_object":true,"certain":true,"preferred":"A","reason":"visible evidence"}
+extent. Box source and model agreement are not evidence. Return JSON conforming to the
+supplied Required schema; decide all values from the visible evidence.
 
 For two acceptable same-object extents without a clear visual quality difference,
 prefer the supplied SAM box. If visible evidence clearly favors another extent,

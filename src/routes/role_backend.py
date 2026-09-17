@@ -7,6 +7,7 @@ from PIL import ImageDraw
 from src.models.qwen38_client import Qwen38Client, QwenValidationError, QwenContextLengthError
 from src.routes.common import invoke_grounders
 from src.routes.role_contract import key
+from src.routes.role_context import context_views,region_pixels
 from src.utils.config import resolve_path
 from src.utils.geometry import clip_box
 from src.utils.images import open_rgb
@@ -22,24 +23,42 @@ class Backend:
         return resolve_path('prompts/role_'+name+'.txt').read_text()
 
     def ask(self,name,state,card,schema,boxes=()):
+        blind=name=='blind'
+        if blind and (boxes or set(card)-{'phrase','observation'}):
+            raise ValueError('Blind review must not receive target or generation evidence')
         original=open_rgb(state['source_image']); images=[original]
         card={**card,'original_image_size_px':list(original.size),
               'image_order':['image 1: original full image, without annotations']}
         try:
-            if boxes:
+            if blind:
+                # Regions come ONLY from this blind reader's first observation.
+                for spec in (card.get('observation') or {}).get('requested_regions',[]):
+                    region=region_pixels(spec['region'],*original.size)
+                    images.append(original.crop(region))
+                    card['image_order'].append(f'image {len(images)}: unmarked requested view; original xyxy={region}; full-image scope unchanged')
+            elif boxes:
                 overlay=original.copy(); draw=ImageDraw.Draw(overlay)
                 for index,box in enumerate(boxes):
-                    draw.rectangle(box,outline=('red' if index==0 else 'blue'),width=max(3,min(original.size)//300))
-                    draw.text((box[0],box[1]),'A' if index==0 else 'B',fill='red' if index==0 else 'blue')
-                images.append(overlay)
-                a=boxes[0]; images.append(original.crop(a))
-                dx=(a[2]-a[0])*.25;dy=(a[3]-a[1])*.25
-                images.append(original.crop(clip_box([a[0]-dx,a[1]-dy,a[2]+dx,a[3]+dy],*original.size)))
-                if len(boxes)>1:images.append(original.crop(boxes[1]))
-                card['image_order'] += ['image 2: full-image overlay, A=red, B=blue if present',
-                    'image 3: EXACT pixels inside A; its edges are the proposed box boundaries',
-                    'image 4: surrounding context for A; not the proposed box']
-                if len(boxes)>1:card['image_order'].append('image 5: EXACT pixels inside B')
+                    label='A' if index==0 else 'B'
+                    draw.rectangle(box,outline='red' if index==0 else 'blue',width=max(2,min(original.size)//500))
+                    draw.text((box[0],box[1]),label,fill='red' if index==0 else 'blue')
+                images.append(overlay);images.append(original.crop(boxes[0]))
+                card['image_order'] += ['image 2: full-image A=red, B=blue when present',
+                    'image 3: exact A pixels for boundary/identity only; NOT evidence of uniqueness']
+                if name in ('object','identity','ocr','context'):
+                    a=boxes[0];dx=(a[2]-a[0])*.25;dy=(a[3]-a[1])*.25
+                    regions=[clip_box([a[0]-dx,a[1]-dy,a[2]+dx,a[3]+dy],*original.size)]
+                    # Object identity needs its parent as well as immediate edges.
+                    if name in ('object','context'):
+                        regions += context_views(state,{},boxes,self.config)[:1]
+                else:
+                    regions=context_views(state,card,boxes,self.config)
+                for region in regions:
+                    images.append(original.crop(region))
+                    card['image_order'].append(f'image {len(images)}: unmarked context, original xyxy={region}; never redefine full-image scope')
+                if len(boxes)>1:
+                    images.append(original.crop(boxes[1]))
+                    card['image_order'].append(f'image {len(images)}: exact B pixels')
                 card['boxes_xyxy_original_px']={label:list(box) for label,box in zip(('A','B'),boxes)}
                 card['boxes_xyxy_normalized_1000']={label:[box[0]*1000/original.width,box[1]*1000/original.height,
                     box[2]*1000/original.width,box[3]*1000/original.height] for label,box in zip(('A','B'),boxes)}
@@ -55,9 +74,12 @@ class Backend:
                 # Exhausted malformed semantic answers do not delete confirmed
                 # objects. Transport/service exceptions propagate for recovery.
                 reason='model_output_invalid: '+str(exc)[:1000]
-                if name=='phrase':value=dict(expression='',visible_evidence=[],reason=reason)
+                if name=='phrase':value=dict(expression='',locator_cue='',cue_type='none',visible_evidence=[],reason=reason)
+                elif name=='context':value=dict(regions=[],comparison_scope='unresolved context',reason=reason)
+                elif name=='blind':value=dict(outcome='uncertain',matches=[],requested_regions=[],comparison_scope='full image',reason=reason)
                 elif name in ('verify','adjudicate'):
-                    value=dict(outcome='uncertain',describes_A=False,facts_visible=False,
+                    value=dict(outcome='uncertain',target_kind_matches=False,locator_cue_valid=False,reference_scope_clear=False,
+                        blind_target_relation='uncertain',comparisons=[],issue_type='uncertain',describes_A=False,facts_visible=False,
                         single_whole_target=False,grammatical=False,unique_in_full_image=False,
                         also_matches_B=False,competing_object_ids=[],discriminator=None,evidence=[],reason=reason)
                 elif name=='ocr':value=dict(verified_target_text=[])

@@ -1,10 +1,12 @@
 """One versioned stage definition shared by CLI, scheduler, progress and recovery."""
 CONTRACT = 'role-grounding-v1'
-STORAGE_CONTRACT = 'role-grounding-storage-v1'
+STORAGE_CONTRACT = 'role-grounding-storage-v2'
+LEGACY_STORAGE_CONTRACT = 'role-grounding-storage-v1'
 
 
 def stage_plan(config=None):
-    config = config or {}
+    config = {"phrase_review_version": 2} if config is None else config
+    blind = int(config.get("phrase_review_version",1)) >= 2
     stages = [
         ('qwen', 'category_inventory', 'scene', '类别清单'),
         ('other', 'instance_discovery', 'discover', 'SAM 实例发现与 EGM 定位'),
@@ -36,6 +38,13 @@ def stage_plan(config=None):
         ('other', 'finalize_objects', 'finalize', '导出对象与描述状态'),
         ('other', 'review_export', 'review', '生成审核图片'),
     ])
+    if blind:
+        expanded=[]
+        for row in stages:
+            if row[2]=="verify_phrases":
+                expanded.append(("qwen",row[1].replace("adjudication","blind_review"),"blind_review","独立盲审指代集合"))
+            expanded.append(row)
+        stages=expanded
     return stages
 
 

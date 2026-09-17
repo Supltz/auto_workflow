@@ -55,6 +55,14 @@ max_refinement_rounds: 2
 
 grounders: [sam31, egm]
 grounding_contract: role-grounding-v1
+phrase_review_version: 2
+phrase_context:
+  local_scale: 3.0
+  min_image_fraction: 0.15
+  group_padding: 0.12
+  max_group_views: 2
+  peer_page_size: 12
+  nearest_peers: 8
 role_workers: 4
 role_output_tokens: 8192
 category_pages: 3

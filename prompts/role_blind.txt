@@ -1,0 +1,18 @@
+Find the objects referred to by the supplied phrase in the ORIGINAL full image.
+You are not given the intended target. Do not guess what the annotator wanted.
+Find all plausible distinct matches, not just your favourite one. Report at least two
+witnesses if ambiguous (at most 16 matches are needed to establish ambiguity).
+Allow unique, multiple, none, uncertain. Do not treat no detection as proof of absence.
+For each match return an approximate ORIGINAL-image normalized-1000 xyxy bbox,
+its precise referent (whole object, part, printed depiction, package), and visible evidence.
+Check every modifier, anchor identity and ownership. Do not strengthen a broad spatial
+relation into adjacency; a coarse positional region may contain many targets. Superlatives and ordinals
+need a clear full-scene reference set; include visible instances missing from any detector.
+If fine detail or competing objects cannot be resolved, request up to TWO context regions
+in original normalized coordinates. Choose them from the phrase and visible scene, and
+include competing objects/anchors, never an assumed answer alone. Additional images,
+when supplied, are your requested unmarked views; they do not narrow the phrase's scope.
+After those views, return uncertain if still unresolved, with requested_regions:[];
+never fabricate distinguishing detail from enlargement. Reconsider earlier observations
+using the full image plus views. A multiple result must have >=2 distinct matches;
+unique exactly one; none no matches. Return the supplied JSON schema, no new phrase.

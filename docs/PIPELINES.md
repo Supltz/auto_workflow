@@ -1,5 +1,7 @@
 # Route B pipeline contract
 
+> 当前默认 Route B 使用 SAM3.1 + EGM、对象持久保留及 phrase review v2（29 stages），详见 [当前流程说明](PHRASE_CONTEXT_V2.md)。下文三模型 consensus、18 stages、8–30 词和 Top-30 的流程属于旧版。
+
 All stages exchange JSONL. `--start-index` is inclusive, `--end-index` is exclusive, and
 expensive inference stages use semantic-input checkpoints and completed request records.
 The range indexes a seeded random permutation of the complete manifest, not its physical
